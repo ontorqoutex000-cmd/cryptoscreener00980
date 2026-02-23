@@ -1,0 +1,6 @@
+# MAKE PROFITE | CLIENT CONFIGURATION
+# If you want this EXE to connect to a REMOTE server (WordPress/VPS), 
+# enter your server URL below (e.g., http://your-vps-ip:8000)
+# Leave empty to use default local settings.
+
+http://localhost:8000
