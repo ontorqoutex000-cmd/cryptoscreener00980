@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Project Specific
+*.zip
+order_flow_data_sample.json
+api_config.txt
+
+# IDEs
+.vscode/
+.idea/

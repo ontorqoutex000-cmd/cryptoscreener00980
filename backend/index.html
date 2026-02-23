@@ -1,0 +1,2343 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Make Profite | Advanced Analytics Dashboard</title>
+    <script src="libs/tailwind.min.js"></script>
+    <script src="libs/react.min.js"></script>
+    <script src="libs/react-dom.min.js"></script>
+    <script src="libs/babel.min.js"></script>
+    <script src="libs/lucide.min.js"></script>
+    <script src="libs/charts.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #181A20;
+            /* Binance Dark BG */
+            color: #EAECEF;
+        }
+
+        .glass-panel {
+            background: #1E2329;
+            /* Binance Card BG */
+            border: 1px solid #2B3139;
+        }
+
+        .glass-panel-hover:hover {
+            border-color: #FCD535;
+            /* Binance Yellow hover */
+        }
+
+        .sidebar-link.active {
+            background: rgba(252, 213, 53, 0.1);
+            color: #FCD535;
+            border-right: 3px solid #FCD535;
+        }
+
+        .binance-yellow {
+            color: #FCD535;
+        }
+
+        .binance-bg-yellow {
+            background-color: #FCD535;
+            color: #181A20;
+        }
+
+        .binance-green {
+            color: #0ECB81;
+        }
+
+        .binance-red {
+            color: #F6465D;
+        }
+
+        .scroll-hide::-webkit-scrollbar {
+            display: none;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #2B3139;
+            border-radius: 10px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #4a5568;
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* News Ticker */
+        .ticker-wrapper {
+            overflow: hidden;
+            white-space: nowrap;
+            position: relative;
+        }
+
+        .ticker-track {
+            display: inline-flex;
+            gap: 0;
+            animation: ticker-scroll 120s linear infinite;
+            will-change: transform;
+            transform: translate3d(0, 0, 0);
+            backface-visibility: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .ticker-track:hover {
+            animation-play-state: paused;
+        }
+
+        @keyframes ticker-scroll {
+            0% {
+                transform: translateX(0);
+            }
+
+            100% {
+                transform: translateX(-50%);
+            }
+        }
+
+        /* Global alignment fixes */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        .card-grid {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .table-cell-right {
+            text-align: right;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root" class="flex items-center justify-center min-h-screen text-[#848E9C] font-mono bg-[#181A20]">
+        <div class="text-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FCD535] mx-auto mb-4"></div>
+            <p>Loading Application...</p>
+            <p class="text-xs mt-2 opacity-50">If this persists, check console for errors.</p>
+        </div>
+    </div>
+
+    <div id="error-log"
+        style="display:none; position:fixed; bottom:0; left:0; right:0; background:rgba(220,38,38,0.9); color:white; padding:1rem; font-family:monospace; font-size:12px; z-index:9999;">
+    </div>
+
+    <script>
+        window.onerror = function (msg, url, line, col, error) {
+            const log = document.getElementById('error-log');
+            log.style.display = 'block';
+            log.innerHTML += `<div>[Error] ${msg} (Line ${line})</div>`;
+            console.error(msg, error);
+            return false;
+        };
+
+        // Timeout check if React fails to mount
+        setTimeout(() => {
+            const root = document.getElementById('root');
+            if (root && root.innerHTML.includes('Loading Application')) {
+                const log = document.getElementById('error-log');
+                log.style.display = 'block';
+                log.innerHTML += `<div>[Timeout] React failed to mount within 5 seconds. Check network connection to CDNs.</div>`;
+            }
+        }, 5000);
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+        const BASE = window.API_BASE_URL || "";
+
+        const LucideIcon = ({ name, size = 18, className = "" }) => {
+            const iconRef = useRef(null);
+            useEffect(() => {
+                if (window.lucide && iconRef.current) {
+                    lucide.createIcons({
+                        attrs: { width: size, height: size, class: className }
+                    });
+                }
+            }, [name, size, className]);
+            return <i data-lucide={name.toLowerCase()} ref={iconRef} className={className}></i>;
+        };
+
+        // --- Components ---
+
+        const NewsTicker = ({ items, settings }) => {
+            if (!items || items.length === 0 || !settings.tickerVisible) return null;
+            // Duplicate items to ensure smooth infinite loop
+            const tickerItems = [...items, ...items, ...items];
+            return (
+                <div className="bg-[#1E2329] border-y border-[#2B3139] py-2 overflow-hidden ticker-wrapper">
+                    <div className="ticker-track" style={{ animationDuration: `${settings.tickerSpeed}s` }}>
+                        {tickerItems.map((item, id) => (
+                            <div key={id} className="inline-flex items-center mx-8 text-xs font-bold">
+                                <span className={`mr-2 px-1.5 py-0.5 rounded text-[10px] uppercase ${item.type === 'PROFIT_SIGNAL' ? 'bg-[#9333EA]/30 text-[#A855F7] border border-[#A855F7]/30' :
+                                    item.type === 'PRICE_SPIKE' ? (parseFloat(item.value) > 0 ? 'bg-[#0ECB81]/20 text-[#0ECB81]' : 'bg-[#F6465D]/20 text-[#F6465D]') :
+                                        'bg-[#FCD535]/20 text-[#FCD535]'
+                                    }`}>
+                                    {item.type === 'PROFIT_SIGNAL' ? 'PROFIT ALERT' : item.type.replace('_', ' ')}
+                                </span>
+                                <span className="text-[#EAECEF]">{item.symbol.replace('USDT', '')}</span>
+                                <span className="mx-2 text-[#848E9C] font-mono">
+                                    {item.type === 'PRICE_SPIKE' ? `${parseFloat(item.value).toFixed(2)}%` :
+                                        item.type === 'PROFIT_SIGNAL' ? `${item.value}` :
+                                            `${item.value}x VOL`}
+                                </span>
+                                <span className="text-[#848E9C] opacity-50">•</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const StatCard = ({ title, value, subvalue, trend, color = "blue", onClick }) => (
+            <div
+                onClick={onClick}
+                className={`bg-[#1E2329] border border-[#2B3139] p-5 rounded-lg relative overflow-hidden group ${onClick ? 'cursor-pointer hover:border-[#FCD535]/50' : ''}`}
+            >
+                <div className={`absolute top-0 right-0 p-4 opacity-5 bg-${color}-500 blur-2xl h-24 w-24 rounded-full -mr-10 -mt-10`}></div>
+                <h3 className="text-[#848E9C] text-sm font-medium uppercase tracking-wider">{title}</h3>
+                <div className="mt-2 flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-[#EAECEF]">{value || '---'}</span>
+                    <span className={`text-xs font-medium ${(trend || 0) >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                        {(trend || 0) > 0 ? '+' : ''}{trend || '0.0'}%
+                    </span>
+                </div>
+                <p className="text-xs text-[#848E9C] mt-1">{subvalue}</p>
+            </div>
+        );
+
+        const TokenRow = ({ token, index, onSelect, columns = ['price', 'change', 'volume', 'trades'] }) => {
+            const [prevPrice, setPrevPrice] = useState(token.price);
+            const [flash, setFlash] = useState("");
+
+            useEffect(() => {
+                if (token.price > prevPrice) setFlash("bg-[#0ECB81]/20");
+                else if (token.price < prevPrice) setFlash("bg-[#F6465D]/20");
+
+                if (token.price !== prevPrice) {
+                    setPrevPrice(token.price);
+                    const t = setTimeout(() => setFlash(""), 500);
+                    return () => clearTimeout(t);
+                }
+            }, [token.price]);
+
+            const change = token.change_percent || 0;
+
+            return (
+                <tr
+                    onClick={() => onSelect && onSelect(token.symbol)}
+                    className={`border-b border-[#2B3139] hover:bg-[#2B3139] transition-colors ${onSelect ? 'cursor-pointer' : ''}`}
+                >
+                    <td className="py-4 pl-4 shrink-0">
+                        <div className="flex items-center gap-3">
+                            <span className="text-[#848E9C] w-6 text-xs hidden sm:inline-block">#{index + 1}</span>
+                            <div>
+                                <div className="font-bold text-[#EAECEF] text-sm md:text-base">{token.symbol.replace("USDT", "")}</div>
+                                <div className="text-[10px] text-[#848E9C]">USDT</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td className={`text-right font-medium transition-colors duration-300 ${flash} text-[#EAECEF] text-sm md:text-base`}>
+                        ${parseFloat(token.price).toFixed(token.price < 1 ? (token.price < 0.0001 ? 8 : 6) : 2)}
+                    </td>
+                    <td className="text-right">
+                        <span className={`px-2 py-1 rounded-lg text-[10px] md:text-xs font-bold ${change >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                            {change > 0 ? '+' : ''}{change}%
+                        </span>
+                    </td>
+                    {columns.includes('volume') && (
+                        <td className="text-right text-[#848E9C] pr-4 hidden md:table-cell text-xs md:text-sm">
+                            ${(parseFloat(token.quoteVol || token.volume || 0) / 1000000).toFixed(2)}M
+                        </td>
+                    )}
+                    {columns.includes('trades') && (
+                        <td className="text-right text-[#848E9C] pr-4 hidden lg:table-cell text-xs md:text-sm">
+                            {(token.trades || 0).toLocaleString()}
+                        </td>
+                    )}
+                </tr>
+            );
+        };
+
+        const DashboardView = ({ marketData, onSelect, settings }) => {
+            const [momentumEvents, setMomentumEvents] = useState([]);
+
+            useEffect(() => {
+                const fetchMomentum = async () => {
+                    try {
+                        const res = await fetch(`${BASE}/api/momentum`);
+                        const data = await res.json();
+                        setMomentumEvents(data.events || []);
+                    } catch (e) { console.error(e); }
+                };
+                fetchMomentum();
+                const i = setInterval(fetchMomentum, settings.marketRefresh);
+                return () => clearInterval(i);
+            }, [settings.marketRefresh]);
+
+            if (!marketData) return (
+                <div className="flex flex-col items-center justify-center py-40 gap-4">
+                    <div className="w-12 h-12 rounded-full border-4 border-t-[#FCD535] border-[#2B3139] animate-spin"></div>
+                    <p className="text-[#848E9C] font-bold">Synchronizing Market Data...</p>
+                </div>
+            );
+
+            const bullishSpikes = momentumEvents.filter(e => e.type === "PRICE_SPIKE" && parseFloat(e.value) >= settings.spikeThreshold);
+            const bearishSpikes = momentumEvents.filter(e => e.type === "PRICE_SPIKE" && parseFloat(e.value) <= -settings.spikeThreshold);
+            const volBreakouts = momentumEvents.filter(e => e.type === "VOL_BREAKOUT");
+            const profitSignals = momentumEvents.filter(e => e.type === "PROFIT_SIGNAL");
+
+            return (
+                <div className="space-y-6 animate-fade-in relative px-4 md:px-0 pb-10">
+                    <NewsTicker items={momentumEvents} settings={settings} />
+
+                    <div className="space-y-6">
+                        {/* Top Stats */}
+                        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                            <StatCard
+                                title="Top Gainer (24h)"
+                                value={marketData.gainers[0]?.symbol ? marketData.gainers[0].symbol.replace("USDT", "") : "---"}
+                                trend={marketData.gainers[0]?.change_percent}
+                                subvalue={marketData.gainers[0]?.price ? `$${marketData.gainers[0].price}` : ""}
+                                color="emerald"
+                                onClick={() => marketData.gainers[0] && onSelect(marketData.gainers[0].symbol)}
+                            />
+                            <StatCard
+                                title="Top Loser (24h)"
+                                value={marketData.losers[0]?.symbol ? marketData.losers[0].symbol.replace("USDT", "") : "---"}
+                                trend={marketData.losers[0]?.change_percent}
+                                subvalue={marketData.losers[0]?.price ? `$${marketData.losers[0].price}` : ""}
+                                color="red"
+                                onClick={() => marketData.losers[0] && onSelect(marketData.losers[0].symbol)}
+                            />
+                            <StatCard
+                                title="Highest Volume"
+                                value={marketData.volume[0]?.symbol ? marketData.volume[0].symbol.replace("USDT", "") : "---"}
+                                trend={marketData.volume[0]?.change_percent}
+                                subvalue={marketData.volume[0]?.quoteVol ? `Vol: ${(marketData.volume[0].quoteVol / 1000000).toFixed(1)}M` : ""}
+                                color="blue"
+                                onClick={() => marketData.volume[0] && onSelect(marketData.volume[0].symbol)}
+                            />
+                            <div className="bg-[#1E2329] border border-[#2B3139] p-5 rounded-lg relative overflow-hidden">
+                                <h3 className="text-[#848E9C] text-sm font-medium uppercase tracking-wider">Live Alerts</h3>
+                                <div className="mt-2 flex flex-col gap-1.5">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-xs text-[#0ECB81]">⚡ Bullish 3.5%+</span>
+                                        <span className="text-lg font-bold text-[#0ECB81]">{bullishSpikes.length}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-xs text-[#F6465D]">📉 Bearish 3.5%+</span>
+                                        <span className="text-lg font-bold text-[#F6465D]">{bearishSpikes.length}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-xs text-[#FCD535]">📊 Vol Breakouts</span>
+                                        <span className="text-lg font-bold text-[#FCD535]">{volBreakouts.length}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center bg-[#A855F7]/10 px-2 py-1 rounded-lg border border-[#A855F7]/20 mt-1">
+                                        <span className="text-xs text-[#A855F7] font-black underline decoration-[#A855F7]/50 underline-offset-4">💎 PROFIT SIGNALS</span>
+                                        <span className="text-lg font-black text-[#A855F7]">{profitSignals.length}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Bullish Momentum Table */}
+                            <div className="bg-[#1E2329] border border-[#0ECB81]/20 rounded-2xl p-4 md:p-6 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 bg-[#0ECB81]/10 text-[#0ECB81] text-[9px] font-bold px-3 py-1 uppercase tracking-widest">LIVE · Bullish</div>
+                                <h3 className="text-lg font-bold text-[#EAECEF] mb-4 flex items-center gap-2">
+                                    <span className="text-[#0ECB81]">⚡</span> Bullish Spikes (+3.5%)
+                                    <span className="ml-auto text-xs bg-[#0ECB81]/20 text-[#0ECB81] px-2 py-0.5 rounded-full font-bold">{bullishSpikes.length}</span>
+                                </h3>
+                                <div className="space-y-3 overflow-y-auto max-h-[400px] pr-2 custom-scrollbar">
+                                    {bullishSpikes.length > 0 ? bullishSpikes.slice(0, 20).map((e, i) => (
+                                        <div key={e.id} onClick={() => onSelect(e.symbol)} className="flex items-center justify-between p-3 bg-[#181A20] rounded-xl border border-[#2B3139] hover:border-[#0ECB81]/50 cursor-pointer transition-all group">
+                                            <div className="flex flex-col">
+                                                <span className="font-bold group-hover:text-[#0ECB81] text-sm md:text-base">{e.symbol.replace("USDT", "")}</span>
+                                                <span className="text-[10px] text-[#848E9C]">TF: {e.timeframe} · {e.timestamp}</span>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-sm font-bold text-[#0ECB81]">+{parseFloat(e.value).toFixed(2)}%</div>
+                                                <div className="text-[10px] text-[#848E9C]">${parseFloat(e.price).toFixed(parseFloat(e.price) < 1 ? 6 : 4)}</div>
+                                            </div>
+                                        </div>
+                                    )) : (
+                                        <div className="text-center py-12 text-[#848E9C] text-xs">
+                                            <div className="text-2xl mb-2">⏳</div>
+                                            <div className="font-bold mb-1">Scanning 411+ tokens...</div>
+                                            <div className="opacity-60">Bullish spikes appear when candle closes ≥+3.5%</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Bearish Momentum Table */}
+                            <div className="bg-[#1E2329] border border-[#F6465D]/20 rounded-2xl p-4 md:p-6 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 bg-[#F6465D]/10 text-[#F6465D] text-[9px] font-bold px-3 py-1 uppercase tracking-widest">LIVE · Bearish</div>
+                                <h3 className="text-lg font-bold text-[#EAECEF] mb-4 flex items-center gap-2">
+                                    <span className="text-[#F6465D]">📉</span> Bearish Spikes (-3.5%)
+                                    <span className="ml-auto text-xs bg-[#F6465D]/20 text-[#F6465D] px-2 py-0.5 rounded-full font-bold">{bearishSpikes.length}</span>
+                                </h3>
+                                <div className="space-y-3 overflow-y-auto max-h-[400px] pr-2 custom-scrollbar">
+                                    {bearishSpikes.length > 0 ? bearishSpikes.slice(0, 20).map((e, i) => (
+                                        <div key={e.id} onClick={() => onSelect(e.symbol)} className="flex items-center justify-between p-3 bg-[#181A20] rounded-xl border border-[#2B3139] hover:border-[#F6465D]/50 cursor-pointer transition-all group">
+                                            <div className="flex flex-col">
+                                                <span className="font-bold group-hover:text-[#F6465D] text-sm md:text-base">{e.symbol.replace("USDT", "")}</span>
+                                                <span className="text-[10px] text-[#848E9C]">TF: {e.timeframe} · {e.timestamp}</span>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-sm font-bold text-[#F6465D]">{parseFloat(e.value).toFixed(2)}%</div>
+                                                <div className="text-[10px] text-[#848E9C]">${parseFloat(e.price).toFixed(parseFloat(e.price) < 1 ? 6 : 4)}</div>
+                                            </div>
+                                        </div>
+                                    )) : (
+                                        <div className="text-center py-12 text-[#848E9C] text-xs">
+                                            <div className="text-2xl mb-2">⏳</div>
+                                            <div className="font-bold mb-1">Scanning 411+ tokens...</div>
+                                            <div className="opacity-60">Bearish spikes appear when candle closes ≤-3.5%</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Gainers Table */}
+                            <div className="bg-[#1E2329] border border-[#2B3139] rounded-2xl p-4 md:p-6">
+                                <h3 className="text-base md:text-lg font-bold text-[#EAECEF] mb-4 flex items-center gap-2">
+                                    <span className="text-[#0ECB81]">🚀</span> Top 24h Gainers
+                                    <span className="ml-auto text-[10px] text-[#848E9C]">USDT Spot · Live</span>
+                                </h3>
+                                <div className="overflow-x-auto no-scrollbar">
+                                    <table className="w-full text-sm min-w-[300px]">
+                                        <thead className="text-left text-[#848E9C] border-b border-[#2B3139]">
+                                            <tr>
+                                                <th className="pb-3 pl-2">Asset</th>
+                                                <th className="pb-3 text-right">Price</th>
+                                                <th className="pb-3 text-right">24h%</th>
+                                                <th className="pb-3 text-right hidden md:table-cell">Vol(M)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {marketData.gainers.slice(0, 10).map((t, i) => <TokenRow key={t.symbol} token={t} index={i} onSelect={onSelect} columns={['price', 'change', 'volume']} />)}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            {/* Losers Table */}
+                            <div className="bg-[#1E2329] border border-[#2B3139] rounded-2xl p-4 md:p-6">
+                                <h3 className="text-base md:text-lg font-bold text-[#EAECEF] mb-4 flex items-center gap-2">
+                                    <span className="text-[#F6465D]">📉</span> Top 24h Losers
+                                    <span className="ml-auto text-[10px] text-[#848E9C]">USDT Spot · Live</span>
+                                </h3>
+                                <div className="overflow-x-auto no-scrollbar">
+                                    <table className="w-full text-sm min-w-[300px]">
+                                        <thead className="text-left text-[#848E9C] border-b border-[#2B3139]">
+                                            <tr>
+                                                <th className="pb-3 pl-2">Asset</th>
+                                                <th className="pb-3 text-right">Price</th>
+                                                <th className="pb-3 text-right">24h%</th>
+                                                <th className="pb-3 text-right hidden md:table-cell">Vol(M)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {marketData.losers.slice(0, 10).map((t, i) => <TokenRow key={t.symbol} token={t} index={i} onSelect={onSelect} columns={['price', 'change', 'volume']} />)}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            {/* Volume Table */}
+                            <div className="bg-[#1E2329] border border-[#2B3139] rounded-2xl p-4 md:p-6">
+                                <h3 className="text-base md:text-lg font-bold text-[#EAECEF] mb-4 flex items-center gap-2">
+                                    <span className="text-[#FCD535]">📊</span> Highest 24h Volume
+                                    <span className="ml-auto text-[10px] text-[#848E9C]">USDT Spot · Live</span>
+                                </h3>
+                                <div className="overflow-x-auto no-scrollbar">
+                                    <table className="w-full text-sm min-w-[300px]">
+                                        <thead className="text-left text-[#848E9C] border-b border-[#2B3139]">
+                                            <tr>
+                                                <th className="pb-3 pl-2">Asset</th>
+                                                <th className="pb-3 text-right">Price</th>
+                                                <th className="pb-3 text-right">24h%</th>
+                                                <th className="pb-3 text-right">Vol(M)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {marketData.volume.slice(0, 10).map((t, i) => (
+                                                <tr key={t.symbol} onClick={() => onSelect(t.symbol)} className="border-b border-[#2B3139] hover:bg-[#2B3139] cursor-pointer">
+                                                    <td className="py-3 pl-2 font-bold text-[#EAECEF] text-sm">{t.symbol.replace("USDT", "")}</td>
+                                                    <td className="text-right text-[#EAECEF] text-sm">${parseFloat(t.price).toFixed(parseFloat(t.price) < 1 ? 6 : 4)}</td>
+                                                    <td className={`text-right text-sm font-bold ${t.change_percent >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>{t.change_percent > 0 ? '+' : ''}{parseFloat(t.change_percent).toFixed(2)}%</td>
+                                                    <td className="text-right text-[#848E9C] text-sm">{(t.quoteVol / 1000000).toFixed(1)}M</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ScreenerView = ({ selectedTf, setSelectedTf, onSelect, settings }) => {
+            const [data, setData] = useState([]);
+            const [priceSpikes, setPriceSpikes] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [activeScanner, setActiveScanner] = useState("volume");
+            const timeframes = ["1m", "5m", "15m", "1h", "4h", "1d"];
+
+            useEffect(() => {
+                const fetchScannerData = async () => {
+                    setLoading(true);
+                    try {
+                        if (activeScanner === "volume") {
+                            const res = await fetch(`${BASE}/api/screener?timeframe=${selectedTf}`);
+                            const json = await res.json();
+                            setData(json.results || []);
+                        } else if (activeScanner === "price") {
+                            const res = await fetch(`${BASE}/api/momentum`);
+                            const json = await res.json();
+                            const spikes = (json.events || []).filter(e => e.type === "PRICE_SPIKE");
+                            setPriceSpikes(spikes);
+                        } else if (activeScanner === "pullback") {
+                            const res = await fetch(`${BASE}/api/momentum`);
+                            const json = await res.json();
+                            const pullbacks = (json.events || []).filter(e => e.type === "PULLBACK_CONTINUATION");
+                            setPriceSpikes(pullbacks);
+                        }
+                    } catch (e) {
+                        console.error(e);
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+                fetchScannerData();
+                const i = setInterval(fetchScannerData, settings.screenerRefresh);
+                return () => clearInterval(i);
+            }, [selectedTf, activeScanner, settings.screenerRefresh]);
+
+            return (
+                <div className="space-y-6 animate-fade-in pb-10">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div className="flex flex-col gap-1">
+                            <h2 className="text-2xl font-bold text-[#EAECEF]">Momentum Scanner</h2>
+                            <div className="flex gap-4 mt-2">
+                                <button
+                                    onClick={() => setActiveScanner("volume")}
+                                    className={`text-sm font-bold uppercase tracking-wider pb-1 border-b-2 transition-all ${activeScanner === "volume" ? "text-[#FCD535] border-[#FCD535]" : "text-[#848E9C] border-transparent hover:text-[#EAECEF]"}`}
+                                >
+                                    Volume Spikes
+                                </button>
+                                <button
+                                    onClick={() => setActiveScanner("price")}
+                                    className={`text-sm font-bold uppercase tracking-wider pb-1 border-b-2 transition-all ${activeScanner === "price" ? "text-[#FCD535] border-[#FCD535]" : "text-[#848E9C] border-transparent hover:text-[#EAECEF]"}`}
+                                >
+                                    3.5% Price Spikes
+                                </button>
+                                <button
+                                    onClick={() => setActiveScanner("pullback")}
+                                    className={`text-sm font-bold uppercase tracking-wider pb-1 border-b-2 transition-all ${activeScanner === "pullback" ? "text-[#FCD535] border-[#FCD535]" : "text-[#848E9C] border-transparent hover:text-[#EAECEF]"}`}
+                                >
+                                    Pullback Patterns
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex bg-[#1E2329] border border-[#2B3139] rounded-xl p-1 gap-1">
+                            {timeframes.map(tf => (
+                                <button
+                                    key={tf}
+                                    onClick={() => setSelectedTf(tf)}
+                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${selectedTf === tf ? 'bg-[#FCD535] text-[#1E2329] shadow-lg shadow-[#FCD535]/20' : 'text-[#848E9C] hover:bg-[#2B3139]'}`}
+                                >
+                                    {tf}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {loading && (activeScanner === "volume" ? data : priceSpikes).length === 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {[1, 2, 3].map(i => <div key={i} className="h-40 bg-[#1E2329] border border-[#2B3139] animate-pulse rounded-2xl"></div>)}
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+                            {activeScanner === "volume" ? (
+                                data.map((item, idx) => (
+                                    <div key={idx} onClick={() => onSelect(item.symbol.replace("/", ""))} className="bg-[#1E2329] border border-[#2B3139] p-5 rounded-2xl hover:border-[#FCD535]/50 transition-all group cursor-pointer">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div className="font-bold text-lg text-[#EAECEF]">{item.symbol.split('/')[0]} <span className="text-xs text-[#848E9C]">/USDT</span></div>
+                                            <div className="flex flex-col items-end gap-1">
+                                                <div className="bg-[#0ECB81]/20 text-[#0ECB81] text-xs px-2 py-1 rounded-full font-bold">
+                                                    {item.vol_ratio}x Vol
+                                                </div>
+                                                <span className="text-[10px] text-[#848E9C]">{new Date(item.timestamp).toLocaleTimeString()}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-[#848E9C]">Price</span>
+                                                <span className="font-medium text-[#EAECEF]">${item.price}</span>
+                                            </div>
+
+                                            <div className="bg-[#181A20] p-3 rounded-xl border border-[#2B3139]">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <span className="text-xs text-[#848E9C] uppercase">Volume</span>
+                                                    <span className={`text-xs font-bold ${item.vol_ratio >= settings.volRatioThreshold ? 'text-[#0ECB81]' : 'text-[#848E9C]'}`}>
+                                                        {item.vol_ratio}x
+                                                    </span>
+                                                </div>
+                                                <div className="w-full bg-[#2B3139] h-1.5 rounded-full overflow-hidden">
+                                                    <div className={`h-full rounded-full ${item.vol_ratio >= settings.volRatioThreshold ? 'bg-[#0ECB81]' : 'bg-[#848E9C]'}`} style={{ width: `${Math.min(item.vol_ratio * 10, 100)}%` }}></div>
+                                                </div>
+                                                <div className="flex justify-between text-[10px] text-[#848E9C] mt-1">
+                                                    <span>Prev {selectedTf}: {parseInt(item.prev_vol).toLocaleString()}</span>
+                                                    <span>Curr {selectedTf}: {parseInt(item.curr_vol).toLocaleString()}</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-[#181A20] p-3 rounded-xl border border-[#2B3139]">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <span className="text-xs text-[#848E9C] uppercase">Transactions</span>
+                                                    <span className={`text-xs font-bold ${item.trade_ratio >= settings.volRatioThreshold ? 'text-[#0ECB81]' : 'text-[#848E9C]'}`}>
+                                                        {item.trade_ratio}x
+                                                    </span>
+                                                </div>
+                                                <div className="w-full bg-[#2B3139] h-1.5 rounded-full overflow-hidden">
+                                                    <div className={`h-full rounded-full ${item.trade_ratio >= settings.volRatioThreshold ? 'bg-[#0ECB81]' : 'bg-[#848E9C]'}`} style={{ width: `${Math.min(item.trade_ratio * 10, 100)}%` }}></div>
+                                                </div>
+                                                <div className="flex justify-between text-[10px] text-[#848E9C] mt-1">
+                                                    <span>Prev {selectedTf}: {item.prev_trades?.toLocaleString() || '-'}</span>
+                                                    <span>Curr {selectedTf}: {item.curr_trades?.toLocaleString() || '-'}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                priceSpikes.map((item, idx) => (
+                                    <div key={idx} onClick={() => onSelect(item.symbol.replace("/", ""))} className="bg-[#1E2329] border-2 border-[#FCD535]/10 p-5 rounded-2xl hover:border-[#FCD535]/50 transition-all group cursor-pointer relative overflow-hidden flex flex-col justify-between h-full">
+                                        <div className="absolute top-0 right-0 bg-[#FCD535] text-[#1e2329] text-[9px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-tighter">
+                                            {item.timeframe} Spike
+                                        </div>
+                                        <div>
+                                            <div className="flex justify-between items-start mb-4 pt-2">
+                                                <div className="font-bold text-lg text-[#EAECEF]">{item.symbol.replace("USDT", "")} <span className="text-xs text-[#848E9C]">/USDT</span></div>
+                                                <div className={`text-xs px-2 py-1 rounded-full font-bold border transition-all ${parseFloat(item.value) >= 0 ? 'bg-[#0ECB81]/10 text-[#0ECB81] border-[#0ECB81]/20' : 'bg-[#F6465D]/10 text-[#F6465D] border-[#F6465D]/20'}`}>
+                                                    {item.value}%
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <div className="flex justify-between text-sm">
+                                                    <span className="text-[#848E9C]">Trigger Price</span>
+                                                    <span className="font-bold text-[#EAECEF]">${item.price}</span>
+                                                </div>
+
+                                                {/* Enriched with Volume Data */}
+                                                <div className="bg-[#181A20] p-3 rounded-xl border border-[#2B3139]">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="text-[10px] text-[#848E9C] uppercase">Candle Volume</span>
+                                                        <span className="text-[10px] font-bold text-[#FCD535]">{item.volume || '-'}M USDT</span>
+                                                    </div>
+                                                    <div className="w-full bg-[#2B3139] h-1 rounded-full overflow-hidden">
+                                                        <div className="h-full bg-[#FCD535] rounded-full" style={{ width: `${Math.min((item.volume || 0) * 10, 100)}%` }}></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="text-[10px] text-[#848E9C] flex justify-between pt-4 border-t border-[#2B3139] mt-4">
+                                            <span>Detected at</span>
+                                            <span className="font-mono">{item.timestamp}</span>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const AllTokensView = ({ onSelect }) => {
+            const [tokens, setTokens] = useState([]);
+            const [search, setSearch] = useState("");
+            const [sortConfig, setSortConfig] = useState({ key: 'volume', direction: 'desc' });
+
+            useEffect(() => {
+                const fetchAll = async () => {
+                    try {
+                        const res = await fetch(`${BASE}/api/all-tickers`);
+                        const data = await res.json();
+                        setTokens(data || []);
+                    } catch (e) { console.error(e); }
+                };
+                fetchAll();
+                const i = setInterval(fetchAll, 2000);
+                return () => clearInterval(i);
+            }, []);
+
+            const handleSort = (key) => {
+                let direction = 'desc';
+                if (sortConfig.key === key && sortConfig.direction === 'desc') {
+                    direction = 'asc';
+                }
+                setSortConfig({ key, direction });
+            };
+
+            const sortedTokens = useMemo(() => {
+                let sortable = [...tokens];
+                if (search) {
+                    sortable = sortable.filter(t => t.symbol.toLowerCase().includes(search.toLowerCase()));
+                }
+                if (sortConfig.key === 'spike_filter') {
+                    sortable = sortable.filter(t => Math.abs(t.change_percent) >= 3.5);
+                } else {
+                    sortable.sort((a, b) => {
+                        let aVal = a[sortConfig.key];
+                        let bVal = b[sortConfig.key];
+
+                        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+                return sortable;
+            }, [tokens, search, sortConfig]);
+
+            return (
+                <div className="animate-fade-in bg-[#1E2329] border border-[#2B3139] rounded-2xl overflow-hidden flex flex-col h-full shadow-2xl">
+                    <div className="p-4 md:p-6 border-b border-[#2B3139] flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#1E2329]">
+                        <div className="flex flex-col gap-4 w-full md:w-auto">
+                            <h2 className="text-xl font-black text-[#EAECEF] uppercase tracking-tight">Spot Market Explorer</h2>
+                            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                                <button onClick={() => handleSort('volume')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap ${sortConfig.key === 'volume' ? 'bg-[#FCD535] text-[#1E2329]' : 'bg-[#2B3139] text-[#848E9C] hover:text-[#EAECEF]'}`}>🔥 High Volume</button>
+                                <button onClick={() => handleSort('change_percent')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap ${sortConfig.key === 'change_percent' ? 'bg-[#0ECB81] text-[#1E2329]' : 'bg-[#2B3139] text-[#848E9C] hover:text-[#EAECEF]'}`}>🚀 Top Gainers</button>
+                                <button onClick={() => setSortConfig({ key: 'spike_filter', direction: 'desc' })} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all whitespace-nowrap ${sortConfig.key === 'spike_filter' ? 'bg-[#FCD535] text-[#1E2329]' : 'bg-[#2B3139] text-[#848E9C] hover:text-[#EAECEF]'}`}>⚡ 3.5% Spikes</button>
+                            </div>
+                        </div>
+                        <div className="relative w-full md:w-72">
+                            <input
+                                type="text"
+                                placeholder="Search by name (e.g. BTC)..."
+                                className="w-full bg-[#181A20] border border-[#2B3139] rounded-xl px-12 py-3 text-sm text-[#EAECEF] focus:ring-2 focus:ring-[#FCD535]/20 focus:border-[#FCD535] transition-all outline-none pl-12"
+                                onChange={(e) => setSearch(e.target.value)}
+                            />
+                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#848E9C]">🔍</div>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto flex-1 custom-scrollbar max-h-[75vh]">
+                        <table className="w-full text-sm min-w-full md:min-w-[700px]">
+                            <thead className="bg-[#1E2329] sticky top-0 z-10 shadow-lg border-b border-[#2B3139]">
+                                <tr className="text-left text-[#848E9C] text-[10px] md:text-xs uppercase tracking-widest font-black">
+                                    <th className="p-4 md:p-6 cursor-pointer hover:text-[#EAECEF]" onClick={() => handleSort('symbol')}>Symbol {sortConfig.key === 'symbol' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th className="p-4 md:p-6 text-right cursor-pointer hover:text-[#EAECEF]" onClick={() => handleSort('price')}>Price {sortConfig.key === 'price' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th className="p-4 md:p-6 text-right cursor-pointer hover:text-[#EAECEF]" onClick={() => handleSort('change_percent')}>24h Chg {sortConfig.key === 'change_percent' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th className="p-4 md:p-6 text-right cursor-pointer hover:text-[#EAECEF] hidden md:table-cell" onClick={() => handleSort('quoteVol')}>Volume {sortConfig.key === 'quoteVol' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th className="p-4 md:p-6 text-right cursor-pointer hover:text-[#EAECEF] hidden lg:table-cell" onClick={() => handleSort('trades')}>Trades {sortConfig.key === 'trades' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {sortedTokens.length > 0 ? (
+                                    sortedTokens.slice(0, 300).map((t, i) => (
+                                        <TokenRow key={t.symbol} token={t} index={i} onSelect={onSelect} />
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="5" className="text-center py-20 text-[#848E9C]">
+                                            <div className="animate-pulse flex flex-col items-center gap-4">
+                                                <div className="w-8 h-8 rounded-full border-2 border-t-[#FCD535] border-transparent animate-spin"></div>
+                                                <p>Establishing connection to Binance Stream...</p>
+                                                <p className="text-[10px] opacity-50">Syncing 411+ USDT Spot Pairs</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                                {sortedTokens.length > 300 && (
+                                    <tr>
+                                        <td colSpan="5" className="text-center p-4 text-[#848E9C] text-xs italic">
+                                            Showing top 300 of {sortedTokens.length} matches
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        const TelegramModal = ({ isOpen, onClose }) => {
+            const [token, setToken] = useState("");
+            const [chatId, setChatId] = useState("");
+            const [enabled, setEnabled] = useState(false);
+            const [status, setStatus] = useState("");
+
+            useEffect(() => {
+                if (isOpen) {
+                    fetch(`${BASE}/api/settings`).then(r => r.json()).then(data => {
+                        setToken(data.bot_token);
+                        setChatId(data.chat_id);
+                        setEnabled(data.enabled);
+                    });
+                }
+            }, [isOpen]);
+
+            const handleSave = async () => {
+                setStatus("Saving...");
+                try {
+                    await fetch(`${BASE}/api/settings`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ bot_token: token, chat_id: chatId, enabled: enabled })
+                    });
+                    setStatus("Saved!");
+                    setTimeout(() => setStatus(""), 2000);
+                } catch (e) {
+                    setStatus("Error saving.");
+                }
+            };
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-[#1E2329] border border-[#2B3139] p-8 rounded-2xl w-full max-w-md relative animate-fade-in">
+                        <button onClick={onClose} className="absolute top-4 right-4 text-[#848E9C] hover:text-[#EAECEF]">✕</button>
+                        <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-[#EAECEF]">
+                            <span className="text-[#FCD535]">📢</span> Telegram Alerts
+                        </h2>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs uppercase text-[#848E9C] mb-1">Bot Token</label>
+                                <input
+                                    type="text"
+                                    value={token}
+                                    onChange={(e) => setToken(e.target.value)}
+                                    className="w-full bg-[#181A20] border border-[#2B3139] rounded-lg p-2 text-sm text-[#EAECEF] focus:border-[#FCD535] outline-none"
+                                    placeholder="bot token..."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs uppercase text-[#848E9C] mb-1">Chat ID</label>
+                                <input
+                                    type="text"
+                                    value={chatId}
+                                    onChange={(e) => setChatId(e.target.value)}
+                                    className="w-full bg-[#181A20] border border-[#2B3139] rounded-lg p-2 text-sm text-[#EAECEF] focus:border-[#FCD535] outline-none"
+                                    placeholder="chat id..."
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-3 pt-2">
+                                <div
+                                    className={`w - 12 h - 6 rounded - full relative cursor - pointer transition - colors ${enabled ? 'bg-[#FCD535]' : 'bg-[#2B3139]'}`}
+                                    onClick={() => setEnabled(!enabled)}
+                                >
+                                    <div className={`w - 4 h - 4 rounded - full bg - white absolute top - 1 transition - all ${enabled ? 'left-7' : 'left-1'}`}></div>
+                                </div>
+                                <span className="text-sm text-[#848E9C]">Enable Notifications</span>
+                            </div>
+
+                            <button
+                                onClick={handleSave}
+                                className="w-full bg-[#FCD535] hover:bg-[#E4C025] text-[#1E2329] font-bold py-3 rounded-xl transition-all mt-4"
+                            >
+                                {status || "Save Configuration"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const SettingsView = ({ settings, setSettings }) => {
+            const updateSetting = (key, value) => {
+                const newSettings = { ...settings, [key]: value };
+                setSettings(newSettings);
+                localStorage.setItem('make_profite_settings', JSON.stringify(newSettings));
+            };
+
+            return (
+                <div className="animate-fade-in space-y-8 max-w-4xl pb-10">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* News Ticker Settings */}
+                        <div className="bg-[#1E2329] border border-[#2B3139] p-6 rounded-2xl">
+                            <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-[#EAECEF]">
+                                <span className="text-[#FCD535]">📰</span> News Ticker
+                            </h3>
+                            <div className="space-y-6">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-[#848E9C]">Visibility</span>
+                                    <button
+                                        onClick={() => updateSetting('tickerVisible', !settings.tickerVisible)}
+                                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${settings.tickerVisible ? 'bg-[#0ECB81]/20 text-[#0ECB81]' : 'bg-[#2B3139] text-[#848E9C]'}`}
+                                    >
+                                        {settings.tickerVisible ? 'VISIBLE' : 'HIDDEN'}
+                                    </button>
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                        <span className="text-sm text-[#848E9C]">Scroll Speed</span>
+                                        <span className="text-xs font-bold text-[#FCD535]">{settings.tickerSpeed}s</span>
+                                    </div>
+                                    <input
+                                        type="range" min="30" max="300" step="10"
+                                        value={settings.tickerSpeed}
+                                        onChange={(e) => updateSetting('tickerSpeed', parseInt(e.target.value))}
+                                        className="w-full accent-[#FCD535]"
+                                    />
+                                    <div className="flex justify-between text-[10px] text-[#848E9C]">
+                                        <span>Fast (30s)</span>
+                                        <span>Slow (300s)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Refresh Rates */}
+                        <div className="bg-[#1E2329] border border-[#2B3139] p-6 rounded-2xl">
+                            <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-[#EAECEF]">
+                                <span className="text-[#FCD535]">🔄</span> Data Sync
+                            </h3>
+                            <div className="space-y-6">
+                                <div className="space-y-3">
+                                    <label className="text-sm text-[#848E9C] block">Market Overview (sec)</label>
+                                    <div className="flex gap-2">
+                                        {[2, 3, 5, 10].map(v => (
+                                            <button
+                                                key={v} onClick={() => updateSetting('marketRefresh', v * 1000)}
+                                                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${settings.marketRefresh === v * 1000 ? 'bg-[#FCD535] text-[#1e2329]' : 'bg-[#2B3139] text-[#848E9C]'}`}
+                                            >
+                                                {v}s
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="space-y-3">
+                                    <label className="text-sm text-[#848E9C] block">Momentum Scanner (sec)</label>
+                                    <div className="flex gap-2">
+                                        {[2, 5, 10, 30].map(v => (
+                                            <button
+                                                key={v} onClick={() => updateSetting('screenerRefresh', v * 1000)}
+                                                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${settings.screenerRefresh === v * 1000 ? 'bg-[#FCD535] text-[#1e2329]' : 'bg-[#2B3139] text-[#848E9C]'}`}
+                                            >
+                                                {v}s
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Analysis Thresholds */}
+                        <div className="bg-[#1E2329] border border-[#2B3139] p-6 rounded-2xl md:col-span-2">
+                            <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-[#EAECEF]">
+                                <span className="text-[#FCD535]">📏</span> Alert Thresholds
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div className="space-y-3">
+                                    <div className="flex justify-between">
+                                        <label className="text-sm text-[#848E9C]">Price Spike Threshold (%)</label>
+                                        <span className="text-xs font-bold text-[#0ECB81]">{settings.spikeThreshold}%</span>
+                                    </div>
+                                    <input
+                                        type="range" min="1.0" max="10.0" step="0.5"
+                                        value={settings.spikeThreshold}
+                                        onChange={(e) => updateSetting('spikeThreshold', parseFloat(e.target.value))}
+                                        className="w-full accent-[#FCD535]"
+                                    />
+                                    <p className="text-[10px] text-[#848E9C] italic">Detects rapid price changes in 1m/5m/15m candles.</p>
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="flex justify-between">
+                                        <label className="text-sm text-[#848E9C]">Volume Breakout Ratio (x)</label>
+                                        <span className="text-xs font-bold text-[#FCD535]">{settings.volRatioThreshold}x</span>
+                                    </div>
+                                    <input
+                                        type="range" min="1.1" max="5.0" step="0.1"
+                                        value={settings.volRatioThreshold}
+                                        onChange={(e) => updateSetting('volRatioThreshold', parseFloat(e.target.value))}
+                                        className="w-full accent-[#FCD535]"
+                                    />
+                                    <p className="text-[10px] text-[#848E9C] italic">Ratio of current volume vs 5-candle average.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const OrderFlowView = ({ initialSymbol = "BTCUSDT" }) => {
+            const [symbol, setSymbol] = useState(initialSymbol);
+            const [interval, setInterval] = useState("15m");
+            const [data, setData] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [searchInput, setSearchInput] = useState(initialSymbol);
+
+            const fetchData = async () => {
+                setLoading(true);
+                try {
+                    const res = await fetch(`${BASE}/api/orderflow/${symbol}?interval=${interval}&limit=10`);
+                    if (!res.ok) throw new Error("Failed to fetch orderflow data");
+                    const json = await res.json();
+                    setData(json);
+                    setError(null);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                fetchData();
+                const i = window.setInterval(fetchData, 3000);
+                return () => window.clearInterval(i);
+            }, [symbol, interval]);
+
+            const handleSearch = (e) => {
+                e.preventDefault();
+                setSymbol(searchInput.toUpperCase().replace("/", ""));
+            };
+
+            if (loading && data.length === 0) return (
+                <div className="flex flex-col items-center justify-center py-40 gap-4">
+                    <div className="w-12 h-12 rounded-full border-4 border-t-[#FCD535] border-[#2B3139] animate-spin"></div>
+                    <p className="text-[#848E9C] font-bold">Aggregating Order Flow Micro-structure...</p>
+                </div>
+            );
+
+            return (
+                <div className="space-y-6 animate-fade-in pb-20">
+                    <div className="bg-[#1E2329] border border-[#2B3139] rounded-2xl p-4 flex flex-wrap gap-4 items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <form onSubmit={handleSearch} className="flex gap-2">
+                                <input
+                                    value={searchInput}
+                                    onChange={e => setSearchInput(e.target.value)}
+                                    placeholder="Symbol e.g. BTCUSDT"
+                                    className="bg-[#181A20] border border-[#2B3139] rounded-xl px-3 py-2 text-sm text-[#EAECEF] focus:border-[#FCD535] outline-none w-40"
+                                />
+                                <button type="submit" className="bg-[#FCD535] text-[#181A20] font-black text-xs px-4 py-2 rounded-xl hover:bg-[#E4C025]">GO</button>
+                            </form>
+                            <div className="text-xl font-black text-[#EAECEF]">
+                                {symbol.replace('USDT', '')} <span className="text-[#848E9C] text-xs font-normal">/USDT</span>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 bg-[#181A20] p-1 rounded-xl border border-[#2B3139]">
+                            {["1m", "5m", "15m", "1h"].map(tf => (
+                                <button
+                                    key={tf} onClick={() => setInterval(tf)}
+                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${interval === tf ? 'bg-[#FCD535] text-[#1E2329]' : 'text-[#848E9C] hover:text-[#EAECEF]'}`}
+                                >
+                                    {tf}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 overflow-x-auto pb-4 custom-scrollbar min-h-[500px]">
+                        {data.length > 0 ? data.map((candle, idx) => {
+                            return (
+                                <div key={idx} className="bg-[#1E2329] border border-[#2B3139] rounded-xl p-3 flex flex-col min-w-[200px]">
+                                    <div className="flex justify-between items-center mb-3 border-b border-[#2B3139] pb-1.5">
+                                        <span className="text-[10px] text-[#848E9C] font-mono">
+                                            {new Date(candle.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                        <span className={`text-[10px] font-bold ${candle.delta >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                                            Δ {candle.delta.toFixed(1)}
+                                        </span>
+                                    </div>
+                                    <div className="flex-1 space-y-0.5">
+                                        {(candle.levels || []).length > 0 ? (candle.levels || []).map((lvl, lIdx) => {
+                                            const isPOC = lvl.price === candle.poc;
+                                            const imbalance = lvl.ask > lvl.bid * 3 ? 'buy' : lvl.bid > lvl.ask * 3 ? 'sell' : null;
+                                            const total = lvl.vol;
+                                            const bidRatio = total > 0 ? (lvl.bid / total) : 0;
+                                            const askRatio = total > 0 ? (lvl.ask / total) : 0;
+                                            return (
+                                                <div key={lIdx} className={`flex items-center text-[9px] h-4 relative overflow-hidden rounded ${isPOC ? 'bg-[#FCD535]/10 ring-1 ring-[#FCD535]/30' : ''}`}>
+                                                    <div className="absolute left-0 top-0 bottom-0 bg-[#F6465D]/15" style={{ width: `${bidRatio * 50}%` }}></div>
+                                                    <div className="absolute right-0 top-0 bottom-0 bg-[#0ECB81]/15" style={{ width: `${askRatio * 50}%` }}></div>
+                                                    <div className="flex-1 text-left pl-1 z-10 font-bold border-r border-[#2B3139]/20 truncate">
+                                                        <span className={imbalance === 'sell' ? 'text-[#F6465D]' : 'text-[#848E9C]'}>{lvl.bid.toFixed(1)}</span>
+                                                    </div>
+                                                    <div className="flex-1 text-right pr-1 z-10 font-bold border-l border-[#2B3139]/20 truncate">
+                                                        <span className={imbalance === 'buy' ? 'text-[#0ECB81]' : 'text-[#848E9C]'}>{lvl.ask.toFixed(1)}</span>
+                                                    </div>
+                                                    <div className="absolute left-1/2 -translate-x-1/2 text-[7px] text-[#EAECEF]/40 font-mono pointer-events-none">
+                                                        {lvl.price}
+                                                    </div>
+                                                </div>
+                                            );
+                                        }) : (
+                                            <div className="flex items-center justify-center h-full text-[9px] text-[#848E9C] italic">No trade data</div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        }) : !loading && (
+                            <div className="col-span-full py-20 text-center bg-[#1E2329] border border-dashed border-[#2B3139] rounded-2xl">
+                                <p className="text-[#848E9C]">No order flow data found for this symbol/timeframe.</p>
+                                <button onClick={fetchData} className="mt-4 text-[#FCD535] text-xs font-bold underline">Try Refreshing</button>
+                            </div>
+                        )}
+                        <div className="bg-[#181A20] border border-[#2B3139] border-dashed rounded-xl p-4 flex flex-col justify-center min-w-[200px]">
+                            <h4 className="text-[10px] font-bold text-[#FCD535] mb-3 uppercase tracking-widest text-center">Footprint Key</h4>
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 rounded bg-[#FCD535]/20 ring-1 ring-[#FCD535]/50"></div>
+                                    <span className="text-[10px] text-[#848E9C]">Point of Control (POC)</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 rounded bg-[#0ECB81]/30"></div>
+                                    <span className="text-[10px] text-[#848E9C]">Buy Pressure (Bid Hit)</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 rounded bg-[#F6465D]/30"></div>
+                                    <span className="text-[10px] text-[#848E9C]">Sell Pressure (Ask Hit)</span>
+                                </div>
+                                <p className="text-[9px] text-[#848E9C] italic leading-tight mt-2 opacity-60"> Aggregated from tick-by-tick Binance stream. Imbalance at 3:1 ratio.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const calculateEMA = (data, period) => {
+            if (!data || data.length < period) return [];
+            const k = 2 / (period + 1);
+            let emaData = [];
+            let currentEma = data[0].close;
+            for (let i = 0; i < data.length; i++) {
+                currentEma = i === 0 ? data[i].close : (data[i].close - currentEma) * k + currentEma;
+                if (i >= period - 1 && isFinite(currentEma)) emaData.push({ time: data[i].time, value: currentEma });
+            }
+            return emaData;
+        };
+
+        const calculateRSI = (data, period = 14) => {
+            if (!data || data.length <= period) return [];
+            let rsiData = [];
+            let gains = 0, losses = 0;
+            for (let i = 1; i <= period; i++) {
+                let diff = data[i].close - data[i - 1].close;
+                if (diff >= 0) gains += diff; else losses -= diff;
+            }
+            let avgGain = gains / period;
+            let avgLoss = losses / period;
+            for (let i = period; i < data.length; i++) {
+                let diff = data[i].close - data[i - 1].close;
+                avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period;
+                avgLoss = (avgLoss * (period - 1) + (diff < 0 ? -diff : 0)) / period;
+                let rs = avgLoss === 0 ? (avgGain === 0 ? 0 : 100) : avgGain / avgLoss;
+                let rsi = 100 - (100 / (1 + rs));
+                if (isFinite(rsi)) rsiData.push({ time: data[i].time, value: rsi });
+            }
+            return rsiData;
+        };
+
+        const calculateMACD = (data, fast = 12, slow = 26, signal = 9) => {
+            const emaFast = calculateEMA(data, fast);
+            const emaSlow = calculateEMA(data, slow);
+            if (!emaFast.length || !emaSlow.length) return { macd: [], signal: [], histogram: [] };
+            let macdLine = [];
+            emaSlow.forEach(s => {
+                const f = emaFast.find(x => x.time === s.time);
+                if (f && isFinite(f.value - s.value)) macdLine.push({ time: s.time, value: f.value - s.value });
+            });
+            const signalLine = calculateEMA(macdLine.map(x => ({ time: x.time, close: x.value })), signal);
+            let histogram = [];
+            signalLine.forEach(sig => {
+                const m = macdLine.find(x => x.time === sig.time);
+                if (m && isFinite(m.value - sig.value)) histogram.push({ time: sig.time, value: m.value - sig.value });
+            });
+            return { macd: macdLine, signal: signalLine, histogram };
+        };
+
+        const calculateCCI = (data, period = 20) => {
+            if (!data || data.length < period) return [];
+            let cciData = [];
+            for (let i = period - 1; i < data.length; i++) {
+                const slice = data.slice(i - period + 1, i + 1);
+                const tp = slice.map(d => (d.high + d.low + d.close) / 3);
+                const smaTp = tp.reduce((a, b) => a + b, 0) / period;
+                const meanDev = tp.reduce((a, b) => a + Math.abs(b - smaTp), 0) / period;
+                const cci = meanDev === 0 ? 0 : (tp[tp.length - 1] - smaTp) / (0.015 * meanDev);
+                if (isFinite(cci)) cciData.push({ time: data[i].time, value: cci });
+            }
+            return cciData;
+        };
+
+        const calculateSuperTrend = (data, period = 10, multiplier = 3) => {
+            if (!data || data.length < period) return [];
+            let st = [], upper = [], lower = [], trend = [];
+            const tempData = data.map(d => ({ ...d }));
+            for (let i = 0; i < tempData.length; i++) {
+                const tr = Math.max(
+                    tempData[i].high - tempData[i].low,
+                    Math.abs(tempData[i].high - (i > 0 ? tempData[i - 1].close : tempData[i].close)),
+                    Math.abs(tempData[i].low - (i > 0 ? tempData[i - 1].close : tempData[i].close))
+                );
+                tempData[i].tr = tr;
+            }
+            let atr = tempData.slice(0, period).reduce((a, b) => a + b.tr, 0) / period;
+            upper[period - 1] = (tempData[period - 1].high + tempData[period - 1].low) / 2;
+            lower[period - 1] = (tempData[period - 1].high + tempData[period - 1].low) / 2;
+            trend[period - 1] = 1;
+
+            for (let i = period; i < tempData.length; i++) {
+                atr = (atr * (period - 1) + tempData[i].tr) / period;
+                let basicUpper = (tempData[i].high + tempData[i].low) / 2 + multiplier * atr;
+                let basicLower = (tempData[i].high + tempData[i].low) / 2 - multiplier * atr;
+                upper[i] = (basicUpper < upper[i - 1] || tempData[i - 1].close > upper[i - 1]) ? basicUpper : upper[i - 1];
+                lower[i] = (basicLower > lower[i - 1] || tempData[i - 1].close < lower[i - 1]) ? basicLower : lower[i - 1];
+                trend[i] = (trend[i - 1] === 1 ? (tempData[i].close > upper[i] ? -1 : 1) : (tempData[i].close < lower[i] ? 1 : -1));
+                const value = trend[i] === 1 ? lower[i] : upper[i];
+                if (isFinite(value)) st.push({ time: tempData[i].time, value: value, color: trend[i] === 1 ? '#0ECB81' : '#F6465D' });
+            }
+            return st;
+        };
+
+        const getIntervalSeconds = (tf) => {
+            const unit = tf.slice(-1);
+            const val = parseInt(tf);
+            if (unit === 'm') return val * 60;
+            if (unit === 'h') return val * 3600;
+            if (unit === 'd') return val * 86400;
+            return 60;
+        };
+
+        const NextCandleTimer = ({ chartTf }) => {
+            const [countdown, setCountdown] = useState("");
+
+            useEffect(() => {
+                const update = () => {
+                    const now = Math.floor(Date.now() / 1000);
+                    const intervalSec = getIntervalSeconds(chartTf);
+                    const nextCandle = Math.ceil(now / intervalSec) * intervalSec;
+                    const diff = nextCandle - now;
+
+                    const h = Math.floor(diff / 3600);
+                    const m = Math.floor((diff % 3600) / 60);
+                    const s = diff % 60;
+
+                    let str = "";
+                    if (h > 0) str += `${h}h`;
+                    str += `${m.toString().padStart(2, '0')}: ${s.toString().padStart(2, '0')}`;
+                    setCountdown(str);
+                };
+
+                update();
+                const timerId = setInterval(update, 1000);
+                return () => clearInterval(timerId);
+            }, [chartTf]);
+
+            return (
+                <div className="bg-[#181A20] px-4 py-2 rounded-xl border border-[#FCD535]/20 flex flex-col items-center min-w-[100px]">
+                    <span className="text-[9px] text-[#848E9C] uppercase font-bold text-center">Next Candle In</span>
+                    <span className="text-sm font-black text-[#FCD535] font-mono">{countdown}</span>
+                </div>
+            );
+        };
+
+        const ChartModal = ({ symbol, onClose }) => {
+            const mainRef = useRef();
+            const rsiRef = useRef();
+            const macdRef = useRef();
+            const cciRef = useRef();
+            const [indicators, setIndicators] = useState({ ema: true, rsi: true, macd: false, cci: false, st: false, vol: true });
+            const [showIndicators, setShowIndicators] = useState(true);
+            const [chartTf, setChartTf] = useState("1h");
+            const [hoverData, setHoverData] = useState(null);
+            const [livePrice, setLivePrice] = useState(null);
+            const chartTimeframes = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"];
+
+            useEffect(() => {
+                if (!symbol) return;
+                let isMounted = true;
+                let isFirstFetch = true;
+
+                const createChart = (container, height, options = {}) => {
+                    if (!container) return null;
+                    try {
+                        const chart = LightweightCharts.createChart(container, {
+                            width: container.clientWidth || 800,
+                            height: height,
+                            layout: { background: { color: '#181A20' }, textColor: '#848E9C' },
+                            grid: { vertLines: { color: '#2B3139' }, horzLines: { color: '#2B3139' } },
+                            timeScale: {
+                                borderColor: '#2B3139',
+                                visible: options.timeVisible || false,
+                                rightOffset: 15,
+                                shiftVisibleRangeOnNewBar: true,
+                            },
+                            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                            ...options
+                        });
+                        return chart;
+                    } catch (e) {
+                        console.error("Failed to create chart:", e);
+                        return null;
+                    }
+                };
+
+                const mainChart = createChart(mainRef.current, 350, { timeVisible: true });
+                if (!mainChart) return;
+
+                const rsiChart = indicators.rsi ? createChart(rsiRef.current, 100) : null;
+                const macdChart = indicators.macd ? createChart(macdRef.current, 100) : null;
+                const cciChart = indicators.cci ? createChart(cciRef.current, 100) : null;
+
+                const candleSeries = mainChart.addCandlestickSeries({
+                    upColor: '#0ECB81', downColor: '#F6465D', borderVisible: false,
+                    wickUpColor: '#0ECB81', wickDownColor: '#F6465D',
+                    priceFormat: { type: 'price', precision: 8, minMove: 0.00000001 },
+                });
+
+                const volSeries = indicators.vol ? mainChart.addHistogramSeries({
+                    color: '#26a69a', priceFormat: { type: 'volume' }, priceScaleId: '',
+                    scaleMargins: { top: 0.8, bottom: 0 },
+                }) : null;
+
+                const emaSeries = (indicators.ema && showIndicators) ? [
+                    mainChart.addLineSeries({ color: '#FCD535', lineWidth: 1, title: 'EMA 7' }),
+                    mainChart.addLineSeries({ color: '#2E8CFF', lineWidth: 1, title: 'EMA 25' }),
+                    mainChart.addLineSeries({ color: '#FF62E1', lineWidth: 1, title: 'EMA 99' }),
+                ] : [];
+
+                const stSeries = (indicators.st && showIndicators) ? mainChart.addLineSeries({ lineWidth: 2, lineStyle: 2 }) : null;
+
+                const rsiSeries = rsiChart ? rsiChart.addLineSeries({ color: '#FCD535', lineWidth: 1.5 }) : null;
+                const macdSeries = macdChart ? {
+                    line: macdChart.addLineSeries({ color: '#2E8CFF', lineWidth: 1 }),
+                    signal: macdChart.addLineSeries({ color: '#FCD535', lineWidth: 1 }),
+                    hist: macdChart.addHistogramSeries({ priceFormat: { type: 'volume' } })
+                } : null;
+                const cciSeries = cciChart ? cciChart.addLineSeries({ color: '#FF62E1', lineWidth: 1.5 }) : null;
+
+                const syncCharts = () => {
+                    const charts = [mainChart, rsiChart, macdChart, cciChart].filter(Boolean);
+                    charts.forEach(c => {
+                        c.timeScale().subscribeVisibleTimeRangeChange(e => {
+                            if (!e) return;
+                            charts.forEach(other => {
+                                if (other !== c) {
+                                    try {
+                                        other.timeScale().setVisibleRange(e);
+                                    } catch (err) { /* Ignore sync errors during init */ }
+                                }
+                            });
+                        });
+                    });
+                };
+                syncCharts();
+
+                let lastData = [];
+
+                const fetchData = async () => {
+                    try {
+                        const res = await fetch(`${BASE}/api/candles?symbol=${symbol}&interval=${chartTf}&limit=300`);
+                        const data = await res.json();
+                        if (!isMounted || !data.length) return;
+
+                        if (isFirstFetch) {
+                            // Initial full load
+                            candleSeries.setData(data);
+                            if (volSeries) volSeries.setData(data.map(d => ({
+                                time: d.time, value: d.volume || 0,
+                                color: d.close >= d.open ? 'rgba(14, 203, 129, 0.3)' : 'rgba(246, 70, 93, 0.5)'
+                            })));
+                            if (indicators.ema && showIndicators) {
+                                [7, 25, 99].forEach((p, i) => emaSeries[i] && emaSeries[i].setData(calculateEMA(data, p)));
+                            }
+                            if (indicators.st && showIndicators && stSeries) stSeries.setData(calculateSuperTrend(data));
+                            if (rsiSeries) rsiSeries.setData(calculateRSI(data));
+                            if (macdSeries) {
+                                const m = calculateMACD(data);
+                                if (m.macd) macdSeries.line.setData(m.macd);
+                                if (m.signal) macdSeries.signal.setData(m.signal);
+                                if (m.histogram) macdSeries.hist.setData(m.histogram.map(h => ({ ...h, color: h.value >= 0 ? 'rgba(14, 203, 129, 0.5)' : 'rgba(246, 70, 93, 0.5)' })));
+                            }
+                            if (cciSeries) cciSeries.setData(calculateCCI(data));
+                            mainChart.timeScale().fitContent();
+                            isFirstFetch = false;
+                        } else {
+                            // Incremental update: only update last candle
+                            const last = data[data.length - 1];
+                            try { candleSeries.update(last); } catch (e) { }
+                            if (volSeries) {
+                                try { volSeries.update({ time: last.time, value: last.volume || 0, color: last.close >= last.open ? 'rgba(14, 203, 129, 0.3)' : 'rgba(246, 70, 93, 0.5)' }); } catch (e) { }
+                            }
+                            // Update live price display
+                            setLivePrice(last.close);
+                        }
+                        lastData = data;
+                    } catch (e) { console.error(e); }
+                };
+
+                mainChart.subscribeCrosshairMove(param => {
+                    if (!param.point || !param.time) {
+                        setHoverData(null);
+                        return;
+                    }
+                    const candle = param.seriesData.get(candleSeries);
+                    if (candle) {
+                        const raw = volSeries ? (param.seriesData.get(volSeries) || {}) : {};
+                        const change = ((candle.close - candle.open) / candle.open * 100).toFixed(2);
+                        // Get trades from lastData
+                        const bar = lastData.find(d => d.time === param.time);
+                        const trades = bar ? bar.trades : 0;
+                        setHoverData({ ...candle, change, volume: raw.value || 0, trades, time: param.time });
+                    }
+                });
+
+                fetchData();
+                const poll = setInterval(fetchData, 2000); // 2-second realtime refresh
+
+                const handleResize = () => {
+                    [mainChart, rsiChart, macdChart, cciChart].forEach((c, i) => {
+                        const containers = [mainRef.current, rsiRef.current, macdRef.current, cciRef.current];
+                        if (c && containers[i]) {
+                            c.applyOptions({ width: containers[i].clientWidth });
+                        }
+                    });
+                };
+                window.addEventListener('resize', handleResize);
+
+                return () => {
+                    isMounted = false;
+                    clearInterval(poll);
+                    window.removeEventListener('resize', handleResize);
+                    [mainChart, rsiChart, macdChart, cciChart].forEach(c => c && c.remove());
+                };
+            }, [symbol, indicators, showIndicators, chartTf]);
+
+            if (!symbol) return null;
+
+            return (
+                <div className="fixed inset-0 bg-[#0B0E11]/98 backdrop-blur-md z-[100] flex flex-col animate-fade-in overflow-hidden">
+                    {/* Header HUD */}
+                    <div className="p-4 md:p-6 border-b border-[#2B3139] bg-[#1E2329]/80 flex flex-col gap-4">
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <button onClick={onClose} className="p-2 hover:bg-[#2B3139] rounded-xl text-[#FCD535] bg-[#FCD535]/10">
+                                    <LucideIcon name="ArrowLeft" size={20} />
+                                </button>
+                                <div>
+                                    <h2 className="text-lg md:text-xl font-black text-[#EAECEF]">{symbol.replace("USDT", "")} <span className="text-[#848E9C] text-xs">/ USDT</span></h2>
+                                    <p className="text-[10px] font-bold text-[#848E9C] uppercase tracking-tighter">Live Trading View</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-6">
+                                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 max-w-[200px] md:max-w-none">
+                                    {chartTimeframes.map(tf => (
+                                        <button
+                                            key={tf}
+                                            onClick={() => setChartTf(tf)}
+                                            className={`px - 3 py - 1 rounded - lg text - [10px] font - black transition - all ${chartTf === tf ? 'bg-[#FCD535] text-[#1E2329]' : 'bg-[#2B3139] text-[#848E9C] hover:text-[#EAECEF]'}`}
+                                        >
+                                            {tf}
+                                        </button>
+                                    ))}
+                                </div>
+                                <NextCandleTimer chartTf={chartTf} />
+                            </div>
+                        </div>
+
+                        {/* Real-time Data Strip */}
+                        {hoverData ? (
+                            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] md:text-xs font-bold font-mono">
+                                <div className="flex gap-1.5"><span className="text-[#848E9C]">O</span><span className="text-[#EAECEF]">{parseFloat(hoverData.open).toPrecision(6)}</span></div>
+                                <div className="flex gap-1.5"><span className="text-[#848E9C]">H</span><span className="text-[#0ECB81]">{parseFloat(hoverData.high).toPrecision(6)}</span></div>
+                                <div className="flex gap-1.5"><span className="text-[#848E9C]">L</span><span className="text-[#F6465D]">{parseFloat(hoverData.low).toPrecision(6)}</span></div>
+                                <div className="flex gap-1.5"><span className="text-[#848E9C]">C</span><span className={parseFloat(hoverData.change) >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}>{parseFloat(hoverData.close).toPrecision(6)}</span></div>
+                                <div className="flex gap-1.5"><span className="text-[#848E9C]">CHG</span><span className={parseFloat(hoverData.change) >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}>{hoverData.change}%</span></div>
+                                <div className="hidden sm:flex gap-1.5"><span className="text-[#848E9C]">VOL</span><span className="text-[#FCD535]">${(parseFloat(hoverData.volume || 0) / 1000).toFixed(1)}K</span></div>
+                                <div className="hidden sm:flex gap-1.5"><span className="text-[#848E9C]">TXN</span><span className="text-[#FF9933]">{(hoverData.trades || 0).toLocaleString()}</span></div>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-4">
+                                <div className="text-[10px] text-[#848E9C] italic flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#FCD535] animate-pulse"></div>
+                                    Hover chart for OHLCV + TXN data
+                                </div>
+                                {livePrice && <div className="text-xs font-bold text-[#0ECB81] font-mono">Live: ${parseFloat(livePrice).toPrecision(6)}</div>}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Chart Panes Area */}
+                    <div className="flex-1 flex flex-col bg-[#181A20] p-1 md:p-2 overflow-y-auto custom-scrollbar overflow-x-hidden">
+                        <div ref={mainRef} className="w-full flex-grow min-h-[350px]"></div>
+                        {indicators.rsi && <div ref={rsiRef} className="h-28 md:h-32 border-t border-[#2B3139] w-full"></div>}
+                        {indicators.macd && <div ref={macdRef} className="h-28 md:h-32 border-t border-[#2B3139] w-full"></div>}
+                        {indicators.cci && <div ref={cciRef} className="h-28 md:h-32 border-t border-[#2B3139] w-full"></div>}
+                    </div>
+
+                    {/* Indicator Controls */}
+                    <div className="p-4 bg-[#1E2329] border-t border-[#2B3139] flex flex-wrap gap-2 justify-center pb-8 sm:pb-4">
+                        {['ema', 'rsi', 'macd', 'cci', 'st', 'vol'].map(id => (
+                            <button
+                                key={id}
+                                onClick={() => setIndicators(prev => ({ ...prev, [id]: !prev[id] }))}
+                                className={`px - 4 py - 2 rounded - xl text - [10px] font - black uppercase tracking - widest transition - all border ${indicators[id] ? 'bg-[#FCD535]/10 border-[#FCD535] text-[#FCD535]' : 'bg-[#181A20] border-[#2B3139] text-[#848E9C]'} `}
+                            >
+                                {id}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const MomentumDrawer = ({ isOpen, onClose, onSelect }) => {
+            const [events, setEvents] = useState([]);
+            const [filterTf, setFilterTf] = useState("ALL");
+            const [activeTab, setActiveTab] = useState("ALL");
+            const timeframes = ["ALL", "1m", "3m", "5m", "15m", "1h", "4h", "1d"];
+            const tabs = ["ALL", "SPIKES", "PULLBACK", "VOLUME", "CROSSOVER", "TRADES", "1M+ VOL"];
+
+            useEffect(() => {
+                const fetchMomentum = async () => {
+                    try {
+                        const res = await fetch(`${BASE}/api/momentum`);
+                        const data = await res.json();
+                        setEvents(data.events || []);
+                    } catch (e) { console.error(e); }
+                };
+                if (isOpen) {
+                    fetchMomentum();
+                    const i = setInterval(fetchMomentum, 3000);
+                    return () => clearInterval(i);
+                }
+            }, [isOpen]);
+
+            const filteredEvents = useMemo(() => {
+                let filtered = events;
+                if (filterTf !== "ALL") {
+                    filtered = filtered.filter(e => e.timeframe === filterTf);
+                }
+                if (activeTab === "ALL") return filtered;
+                if (activeTab === "SPIKES") return filtered.filter(e => e.type === "PRICE_SPIKE");
+                if (activeTab === "PULLBACK") return filtered.filter(e => e.type === "PULLBACK_CONTINUATION");
+                if (activeTab === "VOLUME") return filtered.filter(e => e.type === "VOL_BREAKOUT");
+                if (activeTab === "TRADES") return filtered.filter(e => e.type === "TRADE_BREAKOUT");
+                if (activeTab === "CROSSOVER") return filtered.filter(e => e.type?.includes("EMA_CROSS"));
+                if (activeTab === "1M+ VOL") return filtered.filter(e => e.type === "VOL_1M_CROSS");
+                return filtered;
+            }, [events, filterTf, activeTab]);
+
+            const getAlertStyle = (type) => {
+                switch (type) {
+                    case 'PRICE_SPIKE': return 'bg-[#FCD535]/20 text-[#FCD535] border-[#FCD535]/30';
+                    case 'VOL_BREAKOUT': return 'bg-[#0ECB81]/20 text-[#0ECB81] border-[#0ECB81]/30';
+                    case 'TRADE_BREAKOUT': return 'bg-[#FF9933]/20 text-[#FF9933] border-[#FF9933]/30';
+                    case 'VOL_1M_CROSS': return 'bg-[#FF62E1]/20 text-[#FF62E1] border-[#FF62E1]/30';
+                    case 'EMA_CROSS_UP': return 'bg-[#2E8CFF]/20 text-[#2E8CFF] border-[#2E8CFF]/30';
+                    case 'EMA_CROSS_DOWN': return 'bg-[#F6465D]/20 text-[#F6465D] border-[#F6465D]/30';
+                    case 'PULLBACK_CONTINUATION': return 'bg-[#62E1FF]/20 text-[#62E1FF] border-[#62E1FF]/30';
+                    default: return 'bg-[#2B3139] text-[#848E9C]';
+                }
+            };
+
+            const getAlertLabel = (type) => {
+                switch (type) {
+                    case 'PRICE_SPIKE': return 'Price Spike';
+                    case 'VOL_BREAKOUT': return 'Vol Breakout';
+                    case 'TRADE_BREAKOUT': return 'Trade Spike';
+                    case 'VOL_1M_CROSS': return 'Whale Vol 1M+';
+                    case 'EMA_CROSS_UP': return 'Golden Cross';
+                    case 'EMA_CROSS_DOWN': return 'Death Cross';
+                    case 'PULLBACK_CONTINUATION': return 'Pullback (G-R-G)';
+                    default: return 'Alert';
+                }
+            };
+
+            return (
+                <div className={`fixed inset-y-0 right-0 w-80 bg-[#1E2329] border-l border-[#2B3139] z-[55] transform transition-transform duration-300 ease-in-out shadow-2xl ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+                    <div className="p-6 h-full flex flex-col">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold text-[#EAECEF] flex items-center gap-2">
+                                <span className="text-[#FCD535]">⚡</span> Live Alerts
+                            </h2>
+                            <button onClick={onClose} className="text-[#848E9C] hover:text-[#EAECEF]">✕</button>
+                        </div>
+
+                        {/* Tabs */}
+                        <div className="flex bg-[#181A20] rounded-lg p-1 mb-4">
+                            {tabs.map(tab => (
+                                <button
+                                    key={tab}
+                                    onClick={() => setActiveTab(tab)}
+                                    className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${activeTab === tab ? 'bg-[#2B3139] text-[#EAECEF]' : 'text-[#848E9C] hover:text-[#EAECEF]'}`}
+                                >
+                                    {tab}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Timeframe Filter */}
+                        <div className="flex flex-wrap gap-1.5 mb-6">
+                            {timeframes.map(tf => (
+                                <button
+                                    key={tf}
+                                    onClick={() => setFilterTf(tf)}
+                                    className={`px-2 py-1 rounded text-[10px] font-bold transition-all border ${filterTf === tf ? 'bg-[#FCD535] text-[#1E2329] border-[#FCD535]' : 'bg-[#181A20] text-[#848E9C] border-[#2B3139] hover:border-[#848E9C]'}`}
+                                >
+                                    {tf}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="text-[10px] text-[#848E9C] uppercase tracking-widest mb-4 border-b border-[#2B3139] pb-2">
+                            Watching 411+ Tokens
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar text-[#EAECEF]">
+                            {filteredEvents.map((ev, i) => (
+                                <div
+                                    key={ev.id || i}
+                                    onClick={() => { onSelect(ev.symbol); onClose(); }}
+                                    className={`bg-[#181A20] border p-4 rounded-xl cursor-pointer hover:border-[#FCD535]/50 transition-all group ${ev.type?.includes("CROSS_DOWN") ? 'border-[#F6465D]/30' : 'border-[#2B3139]'}`}
+                                >
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="flex flex-col">
+                                            <span className="font-bold group-hover:text-[#FCD535]">{ev.symbol.replace("USDT", "")}</span>
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border mt-1 w-fit ${getAlertStyle(ev.type)}`}>
+                                                {getAlertLabel(ev.type)}
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-col items-end">
+                                            <span className={`text-xs font-bold ${ev.type === 'EMA_CROSS_DOWN' || (ev.type === 'PRICE_SPIKE' && ev.value < 0) ? 'text-[#F6465D]' : 'text-[#0ECB81]'}`}>
+                                                {ev.type === 'PRICE_SPIKE' ? (ev.value > 0 ? '+' : '') : ''}{ev.value}
+                                                {ev.type === 'PRICE_SPIKE' ? '%' : (ev.type === 'VOL_BREAKOUT' ? 'x Vol' : (ev.type === 'TRADE_BREAKOUT' ? 'x Trades' : (ev.type === 'VOL_1M_CROSS' ? 'M USDT' : (ev.type === 'PULLBACK_CONTINUATION' ? '' : ''))))}
+                                            </span>
+                                            <span className="text-[9px] text-[#848E9C] mt-1 opacity-50 block">${ev.price}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[10px] text-[#848E9C]">
+                                        <span>TF: <span className="text-[#FCD535]">{ev.timeframe}</span></span>
+                                        <span>{ev.timestamp}</span>
+                                    </div>
+                                </div>
+                            ))}
+                            {filteredEvents.length === 0 && (
+                                <div className="text-center py-20 text-[#848E9C] text-sm italic">
+                                    No {activeTab === "ALL" ? "alerts" : activeTab.toLowerCase()} found.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const OrderBookView = ({ symbol }) => {
+            const [book, setBook] = useState({ bids: [], asks: [] });
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                if (!symbol) return;
+                const fetchBook = async () => {
+                    try {
+                        const res = await fetch(`${BASE}/api/order-book?symbol=${symbol.replace("/", "")}&limit=50`);
+                        const data = await res.json();
+                        setBook(data);
+                        setLoading(false);
+                    } catch (e) { console.error(e); }
+                };
+                fetchBook();
+                const i = setInterval(fetchBook, 2000);
+                return () => clearInterval(i);
+            }, [symbol]);
+
+            if (loading) return <div className="p-10 text-center animate-pulse text-[#848E9C]">Loading Order Book...</div>;
+
+            const totalBids = book.bids.reduce((a, b) => a + b[1], 0);
+            const totalAsks = book.asks.reduce((a, b) => a + b[1], 0);
+            const imbalance = (totalBids / (totalBids + totalAsks) * 100).toFixed(1);
+
+            return (
+                <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Summary Stats */}
+                        <div className="md:col-span-3 flex flex-wrap gap-4">
+                            <div className="bg-[#181A20] p-4 rounded-xl border border-[#2B3139] flex-1 min-w-[200px]">
+                                <p className="text-[10px] text-[#848E9C] uppercase tracking-widest mb-1">Book Imbalance</p>
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xl font-bold text-[#0ECB81]">{imbalance}% Buy</span>
+                                    <div className="flex-1 h-2 bg-[#2B3139] rounded-full overflow-hidden">
+                                        <div className="h-full bg-[#0ECB81]" style={{ width: `${imbalance}% ` }}></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="bg-[#181A20] p-4 rounded-xl border border-[#2B3139] flex-1 min-w-[200px]">
+                                <p className="text-[10px] text-[#848E9C] uppercase tracking-widest mb-1">Total Liquidity</p>
+                                <span className="text-xl font-bold text-[#FCD535]">${(totalBids + totalAsks).toLocaleString()}</span>
+                            </div>
+                        </div>
+
+                        {/* Order Book Lists */}
+                        <div className="bg-[#181A20] rounded-xl border border-[#2B3139] overflow-hidden flex flex-col h-[500px]">
+                            <div className="p-3 border-b border-[#2B3139] bg-[#1E2329] text-xs font-bold text-[#F6465D]">SELL ORDERS (ASKS)</div>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                <table className="w-full text-[11px]">
+                                    <thead className="sticky top-0 bg-[#181A20] text-[#848E9C]">
+                                        <tr className="border-b border-[#2B3139]">
+                                            <th className="p-2 text-left">Price</th>
+                                            <th className="p-2 text-right">Amount</th>
+                                            <th className="p-2 text-right">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {[...book.asks].reverse().map((a, i) => (
+                                            <tr key={i} className="hover:bg-[#F6465D]/5 relative group">
+                                                <td className="p-2 text-[#F6465D] font-mono">{a[0]}</td>
+                                                <td className="p-2 text-right text-[#EAECEF]">{a[1].toFixed(4)}</td>
+                                                <td className="p-2 text-right text-[#848E9C]">{(a[0] * a[1]).toFixed(2)}</td>
+                                                <div className="absolute inset-y-0 right-0 bg-[#F6465D]/10 pointer-events-none" style={{ width: `${Math.min((a[1] / totalAsks) * 500, 100)}% ` }}></div>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div className="bg-[#181A20] rounded-xl border border-[#2B3139] overflow-hidden flex flex-col h-[500px]">
+                            <div className="p-3 border-b border-[#2B3139] bg-[#1E2329] text-xs font-bold text-[#0ECB81]">BUY ORDERS (BIDS)</div>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                <table className="w-full text-[11px]">
+                                    <thead className="sticky top-0 bg-[#181A20] text-[#848E9C]">
+                                        <tr className="border-b border-[#2B3139]">
+                                            <th className="p-2 text-left">Price</th>
+                                            <th className="p-2 text-right">Amount</th>
+                                            <th className="p-2 text-right">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {book.bids.map((b, i) => (
+                                            <tr key={i} className="hover:bg-[#0ECB81]/5 relative">
+                                                <td className="p-2 text-[#0ECB81] font-mono">{b[0]}</td>
+                                                <td className="p-2 text-right text-[#EAECEF]">{b[1].toFixed(4)}</td>
+                                                <td className="p-2 text-right text-[#848E9C]">{(b[0] * b[1]).toFixed(2)}</td>
+                                                <div className="absolute inset-y-0 right-0 bg-[#0ECB81]/10 pointer-events-none" style={{ width: `${Math.min((b[1] / totalBids) * 500, 100)}% ` }}></div>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* Wall Detection */}
+                        <div className="bg-[#181A20] rounded-xl border border-[#2B3139] overflow-hidden flex flex-col h-[500px]">
+                            <div className="p-3 border-b border-[#2B3139] bg-[#1E2329] text-xs font-bold text-[#FCD535]">LIQUIDITY WALLS (WHALES)</div>
+                            <div className="flex-1 p-4 space-y-4 overflow-y-auto custom-scrollbar">
+                                {[...book.bids, ...book.asks]
+                                    .filter(x => (x[0] * x[1]) > (totalBids + totalAsks) * 0.05)
+                                    .sort((a, b) => (b[0] * b[1]) - (a[0] * a[1]))
+                                    .map((wall, i) => (
+                                        <div key={i} className="p-3 bg-[#1E2329] rounded-lg border-l-4 border-[#FCD535]">
+                                            <div className="flex justify-between text-xs mb-1">
+                                                <span className={book.bids.find(x => x[0] === wall[0]) ? 'text-[#0ECB81]' : 'text-[#F6465D]'}>
+                                                    {book.bids.find(x => x[0] === wall[0]) ? 'BUY WALL' : 'SELL WALL'}
+                                                </span>
+                                                <span className="text-[#848E9C]">Distance: {Math.abs(((wall[0] - book.bids[0][0]) / book.bids[0][0]) * 100).toFixed(2)}%</span>
+                                            </div>
+                                            <div className="flex justify-between items-baseline">
+                                                <span className="text-lg font-bold text-[#EAECEF]">${wall[0]}</span>
+                                                <span className="text-sm font-black text-[#FCD535]">${(wall[0] * wall[1] / 1000).toFixed(1)}K</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                {![...book.bids, ...book.asks].some(x => (x[0] * x[1]) > (totalBids + totalAsks) * 0.05) && (
+                                    <div className="text-center py-20 text-[#848E9C] text-xs italic">No major walls detected in current range.</div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ProAnalyticsView = ({ onSelect }) => {
+            const [data, setData] = useState(null);
+            const [proSearch, setProSearch] = useState("BTCUSDT");
+            const [activeProTab, setActiveProTab] = useState("Market");
+
+            useEffect(() => {
+                fetch(`${BASE}/api/pro-analytics`)
+                    .then(res => res.json())
+                    .then(setData)
+                    .catch(console.error);
+            }, []);
+
+            if (!data) return <div className="p-20 text-center animate-pulse text-[#848E9C]">Loading AI Models...</div>;
+
+            return (
+                <div className="space-y-8 animate-fade-in">
+                    {/* Navigation */}
+                    <div className="flex bg-[#1E2329] border border-[#2B3139] p-1 rounded-2xl w-fit">
+                        {["Market", "Order Book"].map(tab => (
+                            <button
+                                key={tab}
+                                onClick={() => setActiveProTab(tab)}
+                                className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeProTab === tab ? 'bg-[#FCD535] text-[#1e2329]' : 'text-[#848E9C] hover:text-[#EAECEF]'}`}
+                            >
+                                {tab}
+                            </button>
+                        ))}
+                    </div>
+
+                    {activeProTab === "Market" ? (
+                        <>
+                            <div className="bg-[#1E2329] border border-[#2B3139] p-6 rounded-2xl">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-xl font-bold flex items-center gap-2 text-[#EAECEF]">
+                                        <span className="text-[#FCD535]">🌡️</span> RSI Heatmap (Top 50 Volume)
+                                    </h2>
+                                    <span className="text-xs bg-[#FCD535]/10 text-[#FCD535] px-3 py-1 rounded-full border border-[#FCD535]/20">AI Analysis</span>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                                    {data.heatmap.map((item, i) => (
+                                        <div key={i} onClick={() => onSelect(item.symbol.replace("/", ""))} className={`p-3 rounded-xl border cursor-pointer hover:scale-[1.02] transition-all ${item.rsi > 70 ? 'bg-[#F6465D]/10 border-[#F6465D]/30' : item.rsi < 30 ? 'bg-[#0ECB81]/10 border-[#0ECB81]/30' : 'bg-[#2B3139]/50 border-[#2B3139]'}`}>
+                                            <div className="flex justify-between text-xs mb-1 text-[#848E9C]">
+                                                <span>{item.symbol}</span>
+                                                <span>RSI: {item.rsi}</span>
+                                            </div>
+                                            <div className={`text-lg font-bold ${item.rsi > 70 ? 'text-[#F6465D]' : item.rsi < 30 ? 'text-[#0ECB81]' : 'text-[#EAECEF]'}`}>
+                                                {item.change}%
+                                            </div>
+                                            <div className="text-[10px] mt-1 opacity-70 uppercase tracking-wider text-[#EAECEF]">{item.status}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="bg-[#1E2329] border border-[#2B3139] p-6 rounded-2xl">
+                                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-[#EAECEF]">
+                                        <span className="text-[#FCD535]">🐋</span> Whale Activity Feed
+                                    </h3>
+                                    <div className="space-y-3">
+                                        {data.whale_alerts.length > 0 ? data.whale_alerts.map((alert, i) => (
+                                            <div key={i} onClick={() => onSelect(alert.symbol.replace("/", ""))} className="flex items-center justify-between p-3 bg-[#181A20]/30 rounded-lg border-l-4 border-[#FCD535] cursor-pointer hover:bg-[#181A20]/50 transition-all">
+                                                <div>
+                                                    <div className="font-bold text-[#EAECEF]">{alert.symbol.split('/')[0]}</div>
+                                                    <div className="text-xs text-[#848E9C]">{alert.time}</div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-sm font-bold text-[#FCD535]">High Accumulation</div>
+                                                    <div className="text-xs text-[#848E9C]">Conf: {alert.confidence}</div>
+                                                </div>
+                                            </div>
+                                        )) : <div className="text-center text-[#848E9C] py-10">No whale movements detected recently.</div>}
+                                    </div>
+                                </div>
+
+                                <div className="bg-[#1E2329] border border-[#2B3139] p-6 rounded-2xl">
+                                    <h3 className="text-lg font-bold mb-4 text-[#EAECEF]">Market Sentiment AI</h3>
+                                    <div className="flex items-center justify-center h-40">
+                                        <div className="text-center">
+                                            <div className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#0ECB81] to-[#FCD535]">Bullish</div>
+                                            <div className="text-sm text-[#848E9C] mt-2">68% Buy Pressure</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="bg-[#1E2329] border border-[#2B3139] p-6 rounded-2xl min-h-[600px]">
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                                <div className="flex flex-col gap-1">
+                                    <h2 className="text-xl font-bold flex items-center gap-2 text-[#EAECEF]">
+                                        <span className="text-[#FCD535]">📖</span> L2 Order Book Scanner
+                                    </h2>
+                                    <p className="text-xs text-[#848E9C]">Real-time Market Depth & Liquidity Wall Analysis</p>
+                                </div>
+                                <div className="relative w-full md:w-64">
+                                    <input
+                                        type="text"
+                                        value={proSearch}
+                                        onChange={(e) => setProSearch(e.target.value.toUpperCase())}
+                                        placeholder="Enter Symbol (e.g. BTCUSDT)..."
+                                        className="w-full bg-[#181A20] border border-[#2B3139] rounded-xl px-4 py-2 text-sm text-[#EAECEF] focus:ring-2 focus:ring-[#FCD535]/20 focus:border-[#FCD535] transition-all outline-none"
+                                    />
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] text-[#FCD535] font-black pointer-events-none">PRO</div>
+                                </div>
+                            </div>
+                            <OrderBookView symbol={proSearch} />
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // ─────────────────────────────────────────────
+        //  DEDICATED CHART PAGE with Drawing Tools
+        // ─────────────────────────────────────────────
+        const ChartPageView = ({ symbol, onSymbolChange }) => {
+            const mainRef = useRef();
+            const rsiRef = useRef();
+            const [indicators, setIndicators] = useState({ ema: true, rsi: true, macd: false, cci: false, st: false, vol: true });
+            const [chartTf, setChartTf] = useState("1h");
+            const [hoverData, setHoverData] = useState(null);
+            const [livePrice, setLivePrice] = useState(null);
+            const [searchInput, setSearchInput] = useState(symbol || "BTCUSDT");
+            const [drawMode, setDrawMode] = useState(null); // 'hline' | 'tline' | 'rect' | null
+            const [drawLines, setDrawLines] = useState([]);
+            const chartRef = useRef(null);
+            const candleRef = useRef(null);
+            const lastDataRef = useRef([]);
+            const chartTimeframes = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"];
+            const activeSymbol = symbol || "BTCUSDT";
+
+            useEffect(() => {
+                if (!mainRef.current) return;
+                let isMounted = true;
+                let isFirstFetch = true;
+
+                // Destroy existing chart
+                if (chartRef.current) { try { chartRef.current.remove(); } catch (e) { } }
+
+                const chart = LightweightCharts.createChart(mainRef.current, {
+                    width: mainRef.current.clientWidth || 900,
+                    height: Math.max(400, window.innerHeight - 320),
+                    layout: { background: { color: '#181A20' }, textColor: '#848E9C' },
+                    grid: { vertLines: { color: '#2B3139' }, horzLines: { color: '#2B3139' } },
+                    timeScale: { borderColor: '#2B3139', timeVisible: true, rightOffset: 15, shiftVisibleRangeOnNewBar: true },
+                    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                    rightPriceScale: { borderColor: '#2B3139' },
+                });
+                chartRef.current = chart;
+
+                const rsiChart = indicators.rsi ? LightweightCharts.createChart(rsiRef.current, {
+                    width: rsiRef.current?.clientWidth || 900, height: 110,
+                    layout: { background: { color: '#181A20' }, textColor: '#848E9C' },
+                    grid: { vertLines: { color: '#2B3139' }, horzLines: { color: '#2B3139' } },
+                    timeScale: { borderColor: '#2B3139', visible: false },
+                }) : null;
+
+                const candleSeries = chart.addCandlestickSeries({
+                    upColor: '#0ECB81', downColor: '#F6465D', borderVisible: false,
+                    wickUpColor: '#0ECB81', wickDownColor: '#F6465D',
+                    priceFormat: { type: 'price', precision: 8, minMove: 0.00000001 },
+                });
+                candleRef.current = candleSeries;
+
+                const volSeries = indicators.vol ? chart.addHistogramSeries({
+                    color: '#26a69a', priceFormat: { type: 'volume' }, priceScaleId: '',
+                    scaleMargins: { top: 0.82, bottom: 0 },
+                }) : null;
+
+                const emaSeries = indicators.ema ? [
+                    chart.addLineSeries({ color: '#FCD535', lineWidth: 1, title: 'EMA7' }),
+                    chart.addLineSeries({ color: '#2E8CFF', lineWidth: 1, title: 'EMA25' }),
+                    chart.addLineSeries({ color: '#FF62E1', lineWidth: 1, title: 'EMA99' }),
+                ] : [];
+
+                const rsiSeries = rsiChart ? rsiChart.addLineSeries({ color: '#FCD535', lineWidth: 1.5 }) : null;
+                if (rsiChart && chart) {
+                    chart.timeScale().subscribeVisibleTimeRangeChange(e => {
+                        if (e && rsiChart) try { rsiChart.timeScale().setVisibleRange(e); } catch (err) { }
+                    });
+                }
+
+                const fetchData = async () => {
+                    try {
+                        const res = await fetch(`${BASE}/api/candles?symbol=${activeSymbol}&interval=${chartTf}&limit=300`);
+                        const data = await res.json();
+                        if (!isMounted || !data.length) return;
+                        if (isFirstFetch) {
+                            candleSeries.setData(data);
+                            if (volSeries) volSeries.setData(data.map(d => ({ time: d.time, value: d.volume || 0, color: d.close >= d.open ? 'rgba(14,203,129,0.3)' : 'rgba(246,70,93,0.5)' })));
+                            emaSeries.forEach((s, i) => s.setData(calculateEMA(data, [7, 25, 99][i])));
+                            if (rsiSeries) rsiSeries.setData(calculateRSI(data));
+                            chart.timeScale().fitContent();
+                            isFirstFetch = false;
+                        } else {
+                            const last = data[data.length - 1];
+                            try { candleSeries.update(last); } catch (e) { }
+                            if (volSeries) try { volSeries.update({ time: last.time, value: last.volume || 0, color: last.close >= last.open ? 'rgba(14,203,129,0.3)' : 'rgba(246,70,93,0.5)' }); } catch (e) { }
+                            setLivePrice(last.close);
+                        }
+                        lastDataRef.current = data;
+                    } catch (e) { console.error(e); }
+                };
+
+                chart.subscribeCrosshairMove(param => {
+                    if (!param.point || !param.time) { setHoverData(null); return; }
+                    const candle = param.seriesData.get(candleSeries);
+                    if (candle) {
+                        const raw = volSeries ? (param.seriesData.get(volSeries) || {}) : {};
+                        const change = ((candle.close - candle.open) / candle.open * 100).toFixed(2);
+                        const bar = lastDataRef.current.find(d => d.time === param.time);
+                        setHoverData({ ...candle, change, volume: raw.value || 0, trades: bar?.trades || 0 });
+                    }
+                });
+
+                // Click handler for drawing tools
+                if (mainRef.current) {
+                    mainRef.current._chartClickHandler = (e) => {
+                        if (!drawMode || !chartRef.current || !candleRef.current) return;
+                        const rect = mainRef.current.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const y = e.clientY - rect.top;
+                        const price = chart.priceScale('right').coordinateToPrice ? null : null;
+                        if (drawMode === 'hline') {
+                            // Add horizontal price line via price series
+                            const priceLine = candleSeries.createPriceLine({
+                                price: chart.priceScale('right').coordinateToPrice ? chart.priceScale('right').coordinateToPrice(y) || 0 : 0,
+                                color: '#FCD535', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+                                axisLabelVisible: true, title: 'HL',
+                            });
+                            setDrawLines(prev => [...prev, { type: 'hline', ref: priceLine }]);
+                        }
+                    };
+                    mainRef.current.addEventListener('click', mainRef.current._chartClickHandler);
+                }
+
+                fetchData();
+                const poll = setInterval(fetchData, 2000);
+                const handleResize = () => {
+                    if (mainRef.current) chart.applyOptions({ width: mainRef.current.clientWidth });
+                    if (rsiRef.current && rsiChart) rsiChart.applyOptions({ width: rsiRef.current.clientWidth });
+                };
+                window.addEventListener('resize', handleResize);
+
+                return () => {
+                    isMounted = false;
+                    clearInterval(poll);
+                    window.removeEventListener('resize', handleResize);
+                    if (mainRef.current?._chartClickHandler) mainRef.current.removeEventListener('click', mainRef.current._chartClickHandler);
+                    try { chart.remove(); } catch (e) { }
+                    if (rsiChart) try { rsiChart.remove(); } catch (e) { }
+                    chartRef.current = null;
+                };
+            }, [activeSymbol, chartTf, indicators]);
+
+            const handleSymbolSearch = (e) => {
+                e.preventDefault();
+                const sym = searchInput.trim().toUpperCase().replace('/', '').replace(' ', '') + (searchInput.includes('USDT') ? '' : 'USDT');
+                onSymbolChange && onSymbolChange(sym);
+            };
+
+            const clearDrawings = () => {
+                drawLines.forEach(l => { try { candleRef.current?.removePriceLine(l.ref); } catch (e) { } });
+                setDrawLines([]);
+            };
+
+            return (
+                <div className="animate-fade-in flex flex-col gap-4">
+                    {/* Chart Controls Bar */}
+                    <div className="bg-[#1E2329] border border-[#2B3139] rounded-2xl p-4 flex flex-wrap gap-4 items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <form onSubmit={handleSymbolSearch} className="flex gap-2">
+                                <input
+                                    value={searchInput}
+                                    onChange={e => setSearchInput(e.target.value)}
+                                    placeholder="Symbol e.g. BTCUSDT"
+                                    className="bg-[#181A20] border border-[#2B3139] rounded-xl px-3 py-2 text-sm text-[#EAECEF] focus:border-[#FCD535] outline-none w-40 md:w-52"
+                                />
+                                <button type="submit" className="bg-[#FCD535] text-[#181A20] font-black text-xs px-4 py-2 rounded-xl hover:bg-[#E4C025]">
+                                    GO
+                                </button>
+                            </form>
+                            <div className="text-lg font-black text-[#EAECEF] hidden md:block">
+                                {activeSymbol.replace('USDT', '')} <span className="text-[#848E9C] text-xs font-normal">/USDT</span>
+                            </div>
+                            {livePrice && <div className="text-sm font-bold text-[#0ECB81] font-mono">${parseFloat(livePrice).toPrecision(7)}</div>}
+                        </div>
+
+                        {/* Timeframe Selector */}
+                        <div className="flex bg-[#181A20] border border-[#2B3139] rounded-xl p-1 gap-0.5 flex-wrap">
+                            {chartTimeframes.map(tf => (
+                                <button key={tf} onClick={() => setChartTf(tf)}
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${chartTf === tf ? 'bg-[#FCD535] text-[#1E2329]' : 'text-[#848E9C] hover:text-[#EAECEF]'}`}>
+                                    {tf}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* OHLCV + TXN Hover Strip */}
+                    <div className="bg-[#1E2329] border border-[#2B3139] rounded-xl px-4 py-2.5 flex flex-wrap gap-x-5 gap-y-1 items-center">
+                        {hoverData ? (
+                            <>
+                                <div className="flex gap-1.5 text-xs font-mono font-bold"><span className="text-[#848E9C]">O</span><span className="text-[#EAECEF]">{parseFloat(hoverData.open).toPrecision(6)}</span></div>
+                                <div className="flex gap-1.5 text-xs font-mono font-bold"><span className="text-[#848E9C]">H</span><span className="text-[#0ECB81]">{parseFloat(hoverData.high).toPrecision(6)}</span></div>
+                                <div className="flex gap-1.5 text-xs font-mono font-bold"><span className="text-[#848E9C]">L</span><span className="text-[#F6465D]">{parseFloat(hoverData.low).toPrecision(6)}</span></div>
+                                <div className="flex gap-1.5 text-xs font-mono font-bold"><span className="text-[#848E9C]">C</span><span className={parseFloat(hoverData.change) >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}>{parseFloat(hoverData.close).toPrecision(6)}</span></div>
+                                <div className="flex gap-1.5 text-xs font-mono font-bold"><span className="text-[#848E9C]">CHG</span><span className={parseFloat(hoverData.change) >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}>{hoverData.change}%</span></div>
+                                <div className="flex gap-1.5 text-xs font-mono font-bold"><span className="text-[#848E9C]">VOL</span><span className="text-[#FCD535]">${(parseFloat(hoverData.volume || 0) / 1000).toFixed(1)}K</span></div>
+                                <div className="flex gap-1.5 text-xs font-mono font-bold"><span className="text-[#FF9933]">TXN</span><span className="text-[#FF9933]">{(hoverData.trades || 0).toLocaleString()}</span></div>
+                            </>
+                        ) : (
+                            <div className="text-[10px] text-[#848E9C] flex items-center gap-2">
+                                <div className="w-1.5 h-1.5 rounded-full bg-[#0ECB81] animate-pulse"></div>
+                                Hover chart · O H L C VOL TXN will appear here
+                            </div>
+                        )}
+                        <div className="ml-auto">
+                            <NextCandleTimer chartTf={chartTf} />
+                        </div>
+                    </div>
+
+                    {/* Drawing Toolbar */}
+                    <div className="bg-[#1E2329] border border-[#2B3139] rounded-xl px-4 py-2.5 flex flex-wrap gap-3 items-center">
+                        <span className="text-[10px] text-[#848E9C] uppercase font-bold tracking-widest">Drawing Tools</span>
+                        {[
+                            { id: 'hline', label: '─  H-Line', icon: '—' },
+                            { id: 'tline', label: '╱ Trend', icon: '╱' },
+                            { id: 'rect', label: '▭ Zone', icon: '▭' },
+                        ].map(tool => (
+                            <button key={tool.id} onClick={() => setDrawMode(drawMode === tool.id ? null : tool.id)}
+                                className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${drawMode === tool.id
+                                    ? 'bg-[#FCD535]/20 border-[#FCD535] text-[#FCD535]'
+                                    : 'bg-[#181A20] border-[#2B3139] text-[#848E9C] hover:border-[#848E9C]'
+                                    }`}>
+                                {tool.label}
+                            </button>
+                        ))}
+                        {drawLines.length > 0 && (
+                            <button onClick={clearDrawings} className="text-xs font-bold px-3 py-1.5 rounded-lg border border-[#F6465D]/40 text-[#F6465D] bg-[#F6465D]/10 hover:bg-[#F6465D]/20 transition-all ml-auto">
+                                🗑 Clear All
+                            </button>
+                        )}
+                        {drawMode && <span className="text-[10px] text-[#FCD535] animate-pulse">Click on chart to place</span>}
+
+                        {/* Indicators */}
+                        <div className="ml-auto flex gap-1.5 flex-wrap">
+                            {['ema', 'rsi', 'vol'].map(id => (
+                                <button key={id} onClick={() => setIndicators(prev => ({ ...prev, [id]: !prev[id] }))}
+                                    className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase border transition-all ${indicators[id] ? 'bg-[#FCD535]/10 border-[#FCD535] text-[#FCD535]' : 'bg-[#181A20] border-[#2B3139] text-[#848E9C]'
+                                        }`}>
+                                    {id}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Main Chart */}
+                    <div className="bg-[#181A20] border border-[#2B3139] rounded-2xl overflow-hidden" style={{ cursor: drawMode ? 'crosshair' : 'default' }}>
+                        <div ref={mainRef} className="w-full"></div>
+                        {indicators.rsi && <div ref={rsiRef} className="w-full border-t border-[#2B3139]" style={{ height: '110px' }}></div>}
+                    </div>
+                </div>
+            );
+        };
+
+        function App() {
+            const [view, setView] = useState("dashboard");
+            const [marketData, setMarketData] = useState(null);
+            const [screenerTf, setScreenerTf] = useState("1h");
+            const [isTgModalOpen, setIsTgModalOpen] = useState(false);
+            const [isMomentumOpen, setIsMomentumOpen] = useState(false);
+            const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+            const [selectedToken, setSelectedToken] = useState(null);
+            const [chartPageSymbol, setChartPageSymbol] = useState("BTCUSDT");
+
+            const [settings, setSettings] = useState(() => {
+                const saved = localStorage.getItem('make_profite_settings');
+                return saved ? JSON.parse(saved) : {
+                    tickerSpeed: 120,
+                    tickerVisible: true,
+                    marketRefresh: 3000,
+                    screenerRefresh: 5000,
+                    spikeThreshold: 3.5,
+                    volRatioThreshold: 2.0
+                };
+            });
+
+            const handleSelect = (symbol) => {
+                setSelectedToken(symbol);
+            };
+
+            const openChartPage = (symbol) => {
+                setChartPageSymbol(symbol || "BTCUSDT");
+                setView('chart');
+                setIsSidebarOpen(false);
+            };
+
+            useEffect(() => {
+                const fetchMarket = async () => {
+                    try {
+                        const res = await fetch(`${BASE}/api/market-overview`);
+                        const data = await res.json();
+                        setMarketData(data);
+                    } catch (e) { console.error(e); }
+                };
+                fetchMarket();
+                const i = setInterval(fetchMarket, settings.marketRefresh);
+                return () => clearInterval(i);
+            }, [settings.marketRefresh]);
+
+            return (
+                <div className="flex min-h-screen relative bg-[#181A20] text-[#EAECEF] overflow-x-hidden">
+                    <TelegramModal isOpen={isTgModalOpen} onClose={() => setIsTgModalOpen(false)} />
+                    <ChartModal symbol={selectedToken} onClose={() => setSelectedToken(null)} />
+                    <MomentumDrawer isOpen={isMomentumOpen} onClose={() => setIsMomentumOpen(false)} onSelect={setSelectedToken} />
+
+                    {/* Mobile Sidebar Overlay */}
+                    {isSidebarOpen && (
+                        <div
+                            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] lg:hidden"
+                            onClick={() => setIsSidebarOpen(false)}
+                        ></div>
+                    )}
+
+                    {/* Sidebar Drawer */}
+                    <aside className={`fixed inset-y-0 left-0 w-72 border-r border-[#2B3139] bg-[#1E2329] p-6 flex flex-col z-[70] transition-transform duration-300 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:h-screen lg:min-w-[288px]`}>
+                        <div className="flex justify-between items-center mb-10">
+                            <div className="flex items-center gap-3 text-[#FCD535]">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M16 8l-4 4-4-4 2-2 2 2 2-2 2 2zM12 2L2 12l10 10 10-10L12 2z" /></svg>
+                                <span className="text-2xl font-bold tracking-tighter text-[#EAECEF]">MAKE PROFITE</span>
+                            </div>
+                            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-[#848E9C]">✕</button>
+                        </div>
+
+                        <nav className="space-y-2 flex-1">
+                            {[
+                                { id: "dashboard", label: "Market Overview", icon: "📊" },
+                                { id: "screener", label: "Momentum Scanner", icon: "🚀" },
+                                { id: "orderflow", label: "Order Flow Chart", icon: "🦶" },
+                                { id: "all", label: "All Spot Markets", icon: "💳" },
+                                { id: "chart", label: "Chart & Drawing", icon: "📈" },
+                                { id: "pro", label: "Pro Analytics", icon: "⚡" },
+                                { id: "settings", label: "Application Settings", icon: "⚙️" }
+                            ].map(item => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => { setView(item.id); setIsSidebarOpen(false); }}
+                                    className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition-all ${view === item.id ? 'bg-[#FCD535] text-[#1e2329]' : 'text-[#848E9C] hover:bg-[#2B3139] hover:text-[#EAECEF]'}`}
+                                >
+                                    <span>{item.icon}</span>
+                                    {item.label}
+                                </button>
+                            ))}
+                        </nav>
+
+                        <div className="mt-8 pt-8 border-t border-[#2B3139] space-y-4">
+                            <button onClick={() => { setIsTgModalOpen(true); setIsSidebarOpen(false); }} className="w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 text-[#848E9C] hover:bg-[#2B3139] font-medium">
+                                📢 Telegram Alerts
+                            </button>
+                            <div className="px-4 py-3 bg-[#181A20] rounded-xl border border-[#2B3139]">
+                                <p className="text-[10px] text-[#848E9C] uppercase tracking-widest mb-1">Developer</p>
+                                <p className="text-xs font-bold text-[#FCD535]">MD Morsadul Islam</p>
+                            </div>
+                        </div>
+                    </aside>
+
+                    {/* Main Content Area */}
+                    <main className="flex-1 flex flex-col min-w-0 w-full overflow-hidden">
+                        {/* Mobile Header */}
+                        <header className="lg:hidden px-6 py-4 border-b border-[#2B3139] bg-[#1E2329] flex justify-between items-center sticky top-0 z-50">
+                            <button onClick={() => setIsSidebarOpen(true)} className="text-[#FCD535] p-2 bg-[#FCD535]/10 rounded-lg">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                            </button>
+                            <span className="font-bold tracking-tighter text-[#FCD535]">MAKE PROFITE</span>
+                            <button onClick={() => setIsMomentumOpen(true)} className="text-[#FCD535] p-2 bg-[#FCD535]/10 rounded-lg">⚡</button>
+                        </header>
+
+                        <div className="flex-1 p-4 md:p-8 lg:p-10 max-w-full overflow-x-hidden custom-scrollbar">
+                            <header className="hidden lg:flex justify-between items-center mb-10">
+                                <div>
+                                    <h1 className="text-3xl font-black tracking-tight text-[#EAECEF] uppercase">
+                                        {view === 'dashboard' && 'Market Overview'}
+                                        {view === 'screener' && 'Momentum Scanner'}
+                                        {view === 'all' && 'All Spot Markets'}
+                                        {view === 'orderflow' && 'Order Flow Chart'}
+                                        {view === 'settings' && 'Application Settings'}
+                                        {view === 'chart' && `Chart · ${chartPageSymbol.replace('USDT', '')}/USDT`}
+                                        {view === 'pro' && 'Pro Analytics Suite'}
+                                    </h1>
+                                    <p className="text-[#848E9C] text-sm mt-1">Real-time data synchronization with Binance</p>
+                                </div>
+                                <div className="flex items-center gap-6">
+                                    <button
+                                        onClick={() => setIsMomentumOpen(true)}
+                                        className="flex items-center gap-2 bg-[#FCD535] hover:bg-[#FCD535]/90 text-[#1e2329] px-6 py-2.5 rounded-xl transition-all font-black uppercase text-xs shadow-lg shadow-[#FCD535]/10"
+                                    >
+                                        ⚡ Momentum Alerts
+                                    </button>
+                                    <div className="text-right">
+                                        <p className="text-[10px] text-[#848E9C] uppercase tracking-widest">Server Status</p>
+                                        <p className="text-xs font-bold text-[#0ECB81] flex items-center gap-1.5 ">
+                                            <span className="w-2 h-2 rounded-full bg-[#0ECB81] animate-pulse"></span>
+                                            Operational
+                                        </p>
+                                    </div>
+                                </div>
+                            </header>
+
+                            <div className="max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+                                {view === 'dashboard' && <DashboardView marketData={marketData} onSelect={(s) => { handleSelect(s); }} settings={settings} />}
+                                {view === 'screener' && <ScreenerView selectedTf={screenerTf} setSelectedTf={setScreenerTf} onSelect={handleSelect} settings={settings} />}
+                                {view === 'all' && <AllTokensView onSelect={(s) => { openChartPage(s); }} />}
+                                {view === 'chart' && <ChartPageView symbol={chartPageSymbol} onSymbolChange={setChartPageSymbol} />}
+                                {view === 'orderflow' && <OrderFlowView initialSymbol={chartPageSymbol} />}
+                                {view === 'pro' && <ProAnalyticsView onSelect={handleSelect} />}
+                                {view === 'settings' && <SettingsView settings={settings} setSettings={setSettings} />}
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const rootElement = document.getElementById('root');
+        const reactRoot = ReactDOM.createRoot(rootElement);
+        reactRoot.render(<App />);
+    </script>
+</body>
+
+</html>
