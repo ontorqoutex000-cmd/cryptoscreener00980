@@ -596,7 +596,8 @@ async def get_order_book(symbol: str, limit: int = 100):
     """Fetch order book depth from Binance"""
     async with httpx.AsyncClient() as client:
         try:
-            url = f"{REST_URL}/depth?symbol={symbol}&limit={limit}"
+            await limiter.wait_for_capacity(1)
+            url = f"{limiter.get_url()}/depth?symbol={symbol}&limit={limit}"
             resp = await client.get(url, timeout=5.0)
             if resp.status_code != 200:
                 return {"bids": [], "asks": []}
@@ -628,7 +629,8 @@ async def get_orderflow(symbol: str, interval: str = "15m", limit: int = 5):
     async with httpx.AsyncClient() as client:
         try:
             # 1. Get Candle boundaries
-            url_klines = f"{REST_URL}/klines?symbol={symbol}&interval={interval}&limit={limit}"
+            await limiter.wait_for_capacity(1)
+            url_klines = f"{limiter.get_url()}/klines?symbol={symbol}&interval={interval}&limit={limit}"
             resp_k = await client.get(url_klines, timeout=5.0)
             if resp_k.status_code != 200: return JSONResponse(status_code=400, content={"error": "Klines fail"})
             klines = resp_k.json()
