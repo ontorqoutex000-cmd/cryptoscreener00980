@@ -24,13 +24,52 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-REST_URL = "https://api.binance.com/api/v3"
+# --- Configuration ---
+import sys
+import os
+
+REST_BASE_URLS = [
+    "https://api.binance.com/api/v3",
+    "https://api1.binance.com/api/v3",
+    "https://api2.binance.com/api/v3",
+    "https://api3.binance.com/api/v3"
+]
+
 WS_URL = "wss://stream.binance.com:9443/ws"
 telegram_config = {
     "enabled": False,
     "bot_token": "",
     "chat_id": ""
 }
+
+class RateLimiter:
+    def __init__(self, weight_limit=800):
+        self.weight_limit = weight_limit
+        self.current_weight = 0
+        self.last_reset = time.time()
+        self.url_index = 0
+
+    def get_url(self):
+        self.url_index = (self.url_index + 1) % len(REST_BASE_URLS)
+        return REST_BASE_URLS[self.url_index]
+
+    async def wait_for_capacity(self, weight=1):
+        now = time.time()
+        if now - self.last_reset >= 60:
+            self.current_weight = 0
+            self.last_reset = now
+        
+        if self.current_weight + weight > self.weight_limit:
+            sleep_time = 60 - (now - self.last_reset) + 1
+            if sleep_time > 0:
+                print(f"RATE LIMIT SAFETY: Sleeping {round(sleep_time, 1)}s")
+                await asyncio.sleep(sleep_time)
+                self.current_weight = 0
+                self.last_reset = time.time()
+        
+        self.current_weight += weight
+
+limiter = RateLimiter()
 
 class ExchangeManager:
     def __init__(self):
@@ -61,7 +100,8 @@ app.mount("/libs", StaticFiles(directory=resource_path("libs")), name="libs")
 async def fetch_candle_analysis(client, symbol, tf="1h"):
     try:
         limit = 6 # History for comparison
-        url = f"{REST_URL}/klines?symbol={symbol}&interval={tf}&limit={limit}"
+        await limiter.wait_for_capacity(1)
+        url = f"{limiter.get_url()}/klines?symbol={symbol}&interval={tf}&limit={limit}"
         resp = await client.get(url, timeout=3.0)
         if resp.status_code != 200: return None
         k = resp.json()
@@ -238,7 +278,7 @@ async def momentum_scanner_loop():
             if iteration % 10 == 0: tfs += ["3m", "2h", "6h", "12h"]
 
             # Batch processing for high speed and rate limit safety
-            batch_size = 40 
+            batch_size = 20 # Reduced batch size for safety
             for i in range(0, len(symbols), batch_size):
                 batch = symbols[i:i+batch_size]
                 # Process batch concurrently
@@ -259,19 +299,20 @@ async def momentum_scanner_loop():
                 # Maintain limit and cleanup
                 manager.momentum_events = manager.momentum_events[:240]
                 manager.cleanup_old_events()
-                await asyncio.sleep(2.0) # Increased sleep for rate limit safety
+                await asyncio.sleep(3.0) # More conservative sleep
             
-            # 30 second pause before next cycle to stay within 1200 weight/min
-            await asyncio.sleep(30) 
+            # 60 second pause before next cycle to stay very safe
+            await asyncio.sleep(60) 
 
 async def check_symbol_momentum(client, symbol, tfs):
     """Checks specific timeframes for a symbol for multiple alert types"""
     events = []
     try:
         for tf in tfs:
+            await limiter.wait_for_capacity(1)
             # We need data for EMA 21 and 25 (at least 30-40 candles for accuracy)
             limit = 40
-            url = f"{REST_URL}/klines?symbol={symbol}&interval={tf}&limit={limit}"
+            url = f"{limiter.get_url()}/klines?symbol={symbol}&interval={tf}&limit={limit}"
             resp = await client.get(url, timeout=4.0)
             if resp.status_code != 200: continue
             k = resp.json()
@@ -507,7 +548,8 @@ async def get_candles(symbol: str, interval: str = "1h", limit: int = 100):
     """Proxy for Binance K-lines with robust error handling"""
     async with httpx.AsyncClient() as client:
         try:
-            url = f"{REST_URL}/klines?symbol={symbol}&interval={interval}&limit={limit}"
+            await limiter.wait_for_capacity(1)
+            url = f"{limiter.get_url()}/klines?symbol={symbol}&interval={interval}&limit={limit}"
             resp = await client.get(url, timeout=5.0)
             if resp.status_code != 200:
                 print(f"Candle Fetch Fail: {symbol} {resp.status_code}")
@@ -597,9 +639,11 @@ async def get_orderflow(symbol: str, interval: str = "15m", limit: int = 5):
                 if is_latest:
                     # For the latest candle, fetch THE latest 1000 trades (ignoring startTime/endTime limit)
                     # This ensures we see the real-time "flow" 
-                    url = f"{REST_URL}/aggTrades?symbol={symbol}&limit=1000"
+                    await limiter.wait_for_capacity(1)
+                    url = f"{limiter.get_url()}/aggTrades?symbol={symbol}&limit=1000"
                 else:
-                    url = f"{REST_URL}/aggTrades?symbol={symbol}&startTime={start}&endTime={end}&limit=1000"
+                    await limiter.wait_for_capacity(1)
+                    url = f"{limiter.get_url()}/aggTrades?symbol={symbol}&startTime={start}&endTime={end}&limit=1000"
                 
                 res = await client.get(url, timeout=5.0)
                 if res.status_code == 200:
